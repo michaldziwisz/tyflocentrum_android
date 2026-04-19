@@ -52,7 +52,6 @@ import org.tyflocentrum.android.core.model.FavoritesFilter
 import org.tyflocentrum.android.core.model.PlaybackRateRememberMode
 import org.tyflocentrum.android.core.model.PushPreferences
 import org.tyflocentrum.android.core.model.WpPostDetail
-import org.tyflocentrum.android.core.model.htmlToPlainText
 import org.tyflocentrum.android.ui.AppRoutes
 import org.tyflocentrum.android.ui.LocalAppContainer
 import org.tyflocentrum.android.ui.common.AccessibleHtmlText
@@ -181,7 +180,7 @@ fun PodcastDetailScreen(
                     Text("Komentarze${commentsCount?.let { ": $it" } ?: ""}")
                 }
 
-                PlainTextScreen(text = podcast.content.rendered.htmlToPlainText())
+                PlainTextScreen(text = podcast.content.plainText)
             }
         }
     }
@@ -324,7 +323,7 @@ fun PodcastCommentsScreen(
             if (error != null && comments.isEmpty()) {
                 item { StatePane(message = error.orEmpty()) }
             }
-            items(comments) { comment ->
+            items(comments, key = { it.id }) { comment ->
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = androidx.compose.material3.CardDefaults.cardColors(
@@ -381,7 +380,7 @@ fun FavoritesScreen(
                 item { StatePane(message = "Brak ulubionych.") }
             }
 
-            items(filtered) { item ->
+            items(filtered, key = { it.id }) { item ->
                 when (item) {
                     is FavoriteItem.PodcastFavorite -> {
                         ContentListItem(

@@ -182,7 +182,7 @@ fun NewsScreen(
                     )
                 }
             }
-            items(items) { item ->
+            items(items, key = { it.uniqueId }) { item ->
                 val favoriteItem = when (item.kind) {
                     ContentKind.PODCAST -> FavoriteItem.PodcastFavorite(item.post)
                     ContentKind.ARTICLE -> FavoriteItem.ArticleFavorite(item.post, FavoriteArticleOrigin.POST)
@@ -346,7 +346,7 @@ fun ArticlesHomeScreen(
                     )
                 }
             }
-            items(categories) { category ->
+            items(categories, key = { it.id }) { category ->
                 ActionCard(
                     title = category.name,
                     supportingText = "${category.count} wpisów",
@@ -440,7 +440,7 @@ private fun CategoriesHomeScreen(
                     )
                 }
             }
-            items(categories) { category ->
+            items(categories, key = { it.id }) { category ->
                 ActionCard(
                     title = category.name,
                     supportingText = "${category.count} wpisów",
@@ -523,7 +523,7 @@ fun PodcastListScreen(
                     StatePane(message = error.orEmpty(), retryLabel = "Spróbuj ponownie", onRetry = { load(reset = true) })
                 }
             }
-            items(items) { item ->
+            items(items, key = { it.id }) { item ->
                 val favoriteItem = FavoriteItem.PodcastFavorite(item)
                 val isFavorite = favorites.any { it.id == favoriteItem.id }
                 ContentListItem(
@@ -629,7 +629,7 @@ fun ArticleListScreen(
                     StatePane(message = error.orEmpty(), retryLabel = "Spróbuj ponownie", onRetry = { load(reset = true) })
                 }
             }
-            items(items) { item ->
+            items(items, key = { it.id }) { item ->
                 val favoriteItem = FavoriteItem.ArticleFavorite(item, FavoriteArticleOrigin.POST)
                 val isFavorite = favorites.any { it.id == favoriteItem.id }
                 ContentListItem(
@@ -778,7 +778,7 @@ fun SearchScreen(
                 }
             }
 
-            items(results) { item ->
+            items(results, key = { "${it.kind.name}.${it.post.id}" }) { item ->
                 val favoriteItem = when (item.kind) {
                     ContentKind.PODCAST -> FavoriteItem.PodcastFavorite(item.post)
                     ContentKind.ARTICLE -> FavoriteItem.ArticleFavorite(item.post, FavoriteArticleOrigin.POST)
@@ -895,7 +895,10 @@ fun MagazineScreen(
                         modifier = Modifier.padding(top = 12.dp, bottom = 4.dp)
                     )
                 }
-                items(yearIssues.sortedByDescending { MagazineParser.parseIssueNumberAndYear(it.title.plainText).first ?: -1 }) { issue ->
+                items(
+                    items = yearIssues.sortedByDescending { MagazineParser.parseIssueNumberAndYear(it.title.plainText).first ?: -1 },
+                    key = { it.id }
+                ) { issue ->
                     ContentListItem(
                         title = issue.title.plainText,
                         date = issue.formattedDate,

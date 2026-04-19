@@ -251,6 +251,9 @@ fun AccessibleHtmlText(
 ) {
     val context = LocalContext.current
     val textColor = MaterialTheme.colorScheme.onSurface.toArgb()
+    val spannedText = remember(html) {
+        HtmlCompat.fromHtml(html, HtmlCompat.FROM_HTML_MODE_COMPACT)
+    }
     AndroidView(
         modifier = modifier.fillMaxWidth(),
         factory = {
@@ -265,7 +268,9 @@ fun AccessibleHtmlText(
             }
         },
         update = { textView ->
-            textView.text = HtmlCompat.fromHtml(html, HtmlCompat.FROM_HTML_MODE_COMPACT)
+            if (textView.text != spannedText) {
+                textView.text = spannedText
+            }
         }
     )
 }

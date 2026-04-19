@@ -78,6 +78,7 @@ dependencies {
     implementation("com.squareup.retrofit2:converter-kotlinx-serialization:3.0.0")
 
     implementation("androidx.media3:media3-exoplayer:1.10.0")
+    implementation("androidx.media3:media3-exoplayer-hls:1.10.0")
     implementation("androidx.media3:media3-session:1.10.0")
     implementation("androidx.media3:media3-transformer:1.10.0")
 

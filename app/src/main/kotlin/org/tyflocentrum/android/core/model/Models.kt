@@ -5,6 +5,7 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 import java.util.Locale
+import kotlinx.serialization.Transient
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import org.jsoup.Jsoup
@@ -18,8 +19,11 @@ private val displayDateFormatter: DateTimeFormatter = DateTimeFormatter
 data class WpRenderedText(
     val rendered: String
 ) {
+    @Transient
+    private var plainTextCache: String? = null
+
     val plainText: String
-        get() = rendered.htmlToPlainText()
+        get() = plainTextCache ?: rendered.htmlToPlainText().also { plainTextCache = it }
 }
 
 @Serializable
@@ -30,8 +34,11 @@ data class WpPostSummary(
     val excerpt: WpRenderedText? = null,
     val link: String
 ) {
+    @Transient
+    private var formattedDateCache: String? = null
+
     val formattedDate: String
-        get() = date.formatWpDate()
+        get() = formattedDateCache ?: date.formatWpDate().also { formattedDateCache = it }
 }
 
 @Serializable
@@ -43,8 +50,11 @@ data class WpPostDetail(
     val content: WpRenderedText,
     val guid: WpRenderedText
 ) {
+    @Transient
+    private var formattedDateCache: String? = null
+
     val formattedDate: String
-        get() = date.formatWpDate()
+        get() = formattedDateCache ?: date.formatWpDate().also { formattedDateCache = it }
 }
 
 @Serializable

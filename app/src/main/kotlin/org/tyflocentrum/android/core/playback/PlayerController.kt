@@ -94,37 +94,46 @@ class PlayerController(
 
     fun play(request: PlayerRequest) {
         scope.launch {
-            val sameItem = _uiState.value.current?.url == request.url
-            val startPosition = when {
-                request.isLive -> C.TIME_UNSET
-                request.initialSeekMs != null -> request.initialSeekMs
-                else -> preferences.loadResumePosition(request.url)
-            } ?: C.TIME_UNSET
+            runCatching {
+                val sameItem = _uiState.value.current?.url == request.url
+                val startPosition = when {
+                    request.isLive -> C.TIME_UNSET
+                    request.initialSeekMs != null -> request.initialSeekMs
+                    else -> preferences.loadResumePosition(request.url)
+                } ?: C.TIME_UNSET
 
-            if (!sameItem) {
-                val mediaItem = MediaItem.Builder()
-                    .setUri(request.url)
-                    .setMediaMetadata(
-                        MediaMetadata.Builder()
-                            .setTitle(request.title)
-                            .setArtist(request.subtitle)
-                            .build()
-                    )
-                    .build()
-                player.setMediaItem(mediaItem, startPosition)
-                player.prepare()
-                _uiState.value = _uiState.value.copy(current = request, errorMessage = null)
-            } else if (startPosition != C.TIME_UNSET && startPosition >= 0) {
-                player.seekTo(startPosition)
+                if (!sameItem) {
+                    val mediaItem = MediaItem.Builder()
+                        .setUri(request.url)
+                        .setMediaMetadata(
+                            MediaMetadata.Builder()
+                                .setTitle(request.title)
+                                .setArtist(request.subtitle)
+                                .build()
+                        )
+                        .build()
+                    player.setMediaItem(mediaItem, startPosition)
+                    player.prepare()
+                    _uiState.value = _uiState.value.copy(current = request, errorMessage = null)
+                } else if (startPosition != C.TIME_UNSET && startPosition >= 0) {
+                    player.seekTo(startPosition)
+                }
+
+                val preferredRate = when (settingsSnapshot.playbackRateRememberMode) {
+                    PlaybackRateRememberMode.GLOBAL -> preferences.loadPlaybackRateGlobal()
+                    PlaybackRateRememberMode.PER_EPISODE -> preferences.loadPlaybackRateForUrl(request.url)
+                } ?: 1f
+                player.setPlaybackSpeed(PlaybackRatePolicy.normalized(preferredRate))
+                player.playWhenReady = true
+                updateUiState()
+            }.onFailure { error ->
+                _uiState.value = _uiState.value.copy(
+                    current = request,
+                    isPlaying = false,
+                    isBuffering = false,
+                    errorMessage = error.localizedMessage ?: "Nie udało się odtworzyć materiału."
+                )
             }
-
-            val preferredRate = when (settingsSnapshot.playbackRateRememberMode) {
-                PlaybackRateRememberMode.GLOBAL -> preferences.loadPlaybackRateGlobal()
-                PlaybackRateRememberMode.PER_EPISODE -> preferences.loadPlaybackRateForUrl(request.url)
-            } ?: 1f
-            player.setPlaybackSpeed(PlaybackRatePolicy.normalized(preferredRate))
-            player.playWhenReady = true
-            updateUiState()
         }
     }
 

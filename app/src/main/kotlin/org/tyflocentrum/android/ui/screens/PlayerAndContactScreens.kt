@@ -78,9 +78,11 @@ import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.tyflocentrum.android.core.model.AppSettings
 import org.tyflocentrum.android.core.model.ChapterMarker
 import org.tyflocentrum.android.core.model.ContactDraft
@@ -240,7 +242,9 @@ fun PlayerScreen(
         if (postId != null && !isLive) {
             runCatching {
                 val comments = appContainer.repository.fetchComments(postId)
-                ShowNotesParser.parse(comments)
+                withContext(Dispatchers.Default) {
+                    ShowNotesParser.parse(comments)
+                }
             }.onSuccess { (markers, links) ->
                 chapterMarkers = markers
                 relatedLinks = links
@@ -355,7 +359,7 @@ fun PlayerScreen(
                 item {
                     Text("Znaczniki czasu", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                 }
-                items(chapterMarkers) { marker ->
+                items(chapterMarkers, key = { it.id }) { marker ->
                     val favoriteItem = FavoriteItem.TopicFavorite(
                         podcastId = postId ?: 0,
                         podcastTitle = title,
@@ -383,7 +387,7 @@ fun PlayerScreen(
                 item {
                     Text("Odnośniki", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                 }
-                items(relatedLinks) { link ->
+                items(relatedLinks, key = { it.id }) { link ->
                     val favoriteItem = FavoriteItem.LinkFavorite(
                         podcastId = postId ?: 0,
                         podcastTitle = title,
@@ -464,7 +468,7 @@ fun MagazineIssueScreen(
                     item {
                         Text("Spis treści", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                     }
-                    items(tocItems) { item ->
+                    items(tocItems, key = { it.id }) { item ->
                         ContentListItem(
                             title = item.title.plainText,
                             date = item.formattedDate,
