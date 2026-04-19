@@ -41,3 +41,15 @@ Projekt został przygotowany z naciskiem na:
 APK debug:
 
 `app/build/outputs/apk/debug/app-debug.apk`
+
+## GitHub Actions
+
+Repozytorium zawiera workflowy GitHub Actions:
+
+- `Android CI` uruchamia build i lint przy pushu do `main` oraz dla pull requestów,
+- `Release APK` pozwala ręcznie opublikować testowe wydanie jako GitHub Release.
+
+Uwaga:
+
+- workflow wydawniczy publikuje instalowalny `debug APK`,
+- produkcyjne wydanie podpisane do dystrybucji w Google Play wymaga osobnej konfiguracji kluczy i podpisywania.

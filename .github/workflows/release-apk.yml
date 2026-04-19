@@ -1,0 +1,86 @@
+name: Release APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Git tag for the release, for example v1.0.0-preview.1
+        required: true
+        type: string
+      release_name:
+        description: Visible release title
+        required: true
+        type: string
+      prerelease:
+        description: Publish as prerelease
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK packages
+        run: sdkmanager "platforms;android-36" "build-tools;36.0.0" "platform-tools"
+
+      - name: Make Gradle wrapper executable
+        run: chmod +x gradlew
+
+      - name: Ensure release tag exists
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          git fetch --tags origin
+          if git rev-parse "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "Tag $RELEASE_TAG already exists."
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git tag -a "$RELEASE_TAG" -m "Release $RELEASE_TAG"
+            git push origin "$RELEASE_TAG"
+          fi
+
+      - name: Build debug APK
+        run: ./gradlew --no-daemon assembleDebug
+
+      - name: Prepare release asset
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          mkdir -p dist
+          cp app/build/outputs/apk/debug/app-debug.apk "dist/tyflocentrum-android-${RELEASE_TAG}-debug.apk"
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag }}
+          name: ${{ inputs.release_name }}
+          prerelease: ${{ inputs.prerelease }}
+          generate_release_notes: true
+          body: |
+            Installable debug APK for testing and accessibility review.
+
+            This repository does not yet include production signing keys, so the published artifact is a debug build intended for preview and QA use.
+          files: dist/tyflocentrum-android-${{ inputs.tag }}-debug.apk
