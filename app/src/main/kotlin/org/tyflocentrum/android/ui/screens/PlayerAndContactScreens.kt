@@ -100,6 +100,7 @@ import org.tyflocentrum.android.ui.AppRoutes
 import org.tyflocentrum.android.ui.LocalAppContainer
 import org.tyflocentrum.android.ui.common.AccessibleHtmlText
 import org.tyflocentrum.android.ui.common.AppScreenScaffold
+import org.tyflocentrum.android.ui.common.CastRouteButton
 import org.tyflocentrum.android.ui.common.ContentListItem
 import org.tyflocentrum.android.ui.common.FullScreenScrollable
 import org.tyflocentrum.android.ui.common.StatePane
@@ -137,7 +138,10 @@ fun RadioHomeScreen(
         navController = navController,
         title = "Tyfloradio",
         rootDestination = rootDestination,
-        snackbarHostState = snackbarHostState
+        snackbarHostState = snackbarHostState,
+        actions = {
+            CastRouteButton()
+        }
     ) { padding ->
         Column(
             modifier = Modifier
@@ -255,7 +259,10 @@ fun PlayerScreen(
     AppScreenScaffold(
         navController = navController,
         title = "Odtwarzacz",
-        snackbarHostState = snackbarHostState
+        snackbarHostState = snackbarHostState,
+        actions = {
+            CastRouteButton()
+        }
     ) { padding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
@@ -273,6 +280,14 @@ fun PlayerScreen(
                         Text(text = title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
                         if (!subtitle.isNullOrBlank()) {
                             Text(text = subtitle, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+
+                        if (isLive && playerState.isRemotePlayback) {
+                            Text(
+                                text = "Trwa odtwarzanie na urządzeniu Cast.",
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.primary
+                            )
                         }
 
                         Row(

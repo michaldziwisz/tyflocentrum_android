@@ -261,6 +261,7 @@ data class PlayerUiState(
     val current: PlayerRequest? = null,
     val isPlaying: Boolean = false,
     val isBuffering: Boolean = false,
+    val isRemotePlayback: Boolean = false,
     val durationMs: Long? = null,
     val elapsedMs: Long = 0,
     val playbackRate: Float = 1f,

@@ -79,8 +79,11 @@ dependencies {
 
     implementation("androidx.media3:media3-exoplayer:1.10.0")
     implementation("androidx.media3:media3-exoplayer-hls:1.10.0")
+    implementation("androidx.media3:media3-cast:1.10.0")
     implementation("androidx.media3:media3-session:1.10.0")
     implementation("androidx.media3:media3-transformer:1.10.0")
+    implementation("androidx.mediarouter:mediarouter:1.8.1")
+    implementation("com.google.android.gms:play-services-cast-framework:22.3.1")
 
     implementation("org.jsoup:jsoup:1.22.1")
 

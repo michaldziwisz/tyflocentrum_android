@@ -1,14 +1,20 @@
 package org.tyflocentrum.android.core.playback
 
+import android.content.Intent
 import android.content.Context
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
+import androidx.media3.common.DeviceInfo
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.cast.CastPlayer
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.session.CommandButton
 import androidx.media3.session.MediaSession
+import androidx.media3.common.util.UnstableApi
+import androidx.core.content.ContextCompat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -27,13 +33,14 @@ import org.tyflocentrum.android.core.model.PlayerRequest
 import org.tyflocentrum.android.core.model.PlayerUiState
 import org.tyflocentrum.android.core.storage.AppPreferencesRepository
 
+@UnstableApi
 class PlayerController(
     context: Context,
     private val preferences: AppPreferencesRepository
 ) {
     private val appContext = context.applicationContext
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
-    private val player = ExoPlayer.Builder(appContext)
+    private val localPlayer = ExoPlayer.Builder(appContext)
         .setAudioAttributes(
             AudioAttributes.Builder()
                 .setUsage(C.USAGE_MEDIA)
@@ -41,9 +48,16 @@ class PlayerController(
                 .build(),
             true
         )
+        .setSeekBackIncrementMs(SEEK_INCREMENT_MS)
+        .setSeekForwardIncrementMs(SEEK_INCREMENT_MS)
         .setHandleAudioBecomingNoisy(true)
         .build()
-    private val mediaSession = MediaSession.Builder(appContext, player).build()
+    private val player = CastPlayer.Builder(appContext)
+        .setLocalPlayer(localPlayer)
+        .build()
+    val mediaSession: MediaSession = MediaSession.Builder(appContext, player)
+        .setMediaButtonPreferences(buildMediaButtons(isLive = false))
+        .build()
 
     private val _uiState = MutableStateFlow(PlayerUiState())
     val uiState: StateFlow<PlayerUiState> = _uiState.asStateFlow()
@@ -65,6 +79,10 @@ class PlayerController(
                 }
 
                 override fun onIsPlayingChanged(isPlaying: Boolean) {
+                    updateUiState()
+                }
+
+                override fun onDeviceInfoChanged(deviceInfo: DeviceInfo) {
                     updateUiState()
                 }
 
@@ -95,6 +113,7 @@ class PlayerController(
     fun play(request: PlayerRequest) {
         scope.launch {
             runCatching {
+                ensurePlaybackServiceRunning()
                 val sameItem = _uiState.value.current?.url == request.url
                 val startPosition = when {
                     request.isLive -> C.TIME_UNSET
@@ -113,6 +132,7 @@ class PlayerController(
                         )
                         .build()
                     player.setMediaItem(mediaItem, startPosition)
+                    mediaSession.setMediaButtonPreferences(buildMediaButtons(isLive = request.isLive))
                     player.prepare()
                     _uiState.value = _uiState.value.copy(current = request, errorMessage = null)
                 } else if (startPosition != C.TIME_UNSET && startPosition >= 0) {
@@ -150,6 +170,7 @@ class PlayerController(
     }
 
     fun resume() {
+        ensurePlaybackServiceRunning()
         player.playWhenReady = true
         updateUiState()
     }
@@ -160,13 +181,18 @@ class PlayerController(
     }
 
     fun skipForward(seconds: Int = 30) {
-        val duration = player.duration.takeIf { it > 0 } ?: return
-        player.seekTo((player.currentPosition + seconds * 1000L).coerceAtMost(duration))
+        if (!player.isCommandAvailable(Player.COMMAND_SEEK_FORWARD)) return
+        repeat((seconds * 1000L / SEEK_INCREMENT_MS).toInt().coerceAtLeast(1)) {
+            player.seekForward()
+        }
         updateUiState()
     }
 
     fun skipBackward(seconds: Int = 30) {
-        player.seekTo((player.currentPosition - seconds * 1000L).coerceAtLeast(0))
+        if (!player.isCommandAvailable(Player.COMMAND_SEEK_BACK)) return
+        repeat((seconds * 1000L / SEEK_INCREMENT_MS).toInt().coerceAtLeast(1)) {
+            player.seekBack()
+        }
         updateUiState()
     }
 
@@ -200,6 +226,8 @@ class PlayerController(
         _uiState.value = _uiState.value.copy(errorMessage = null)
     }
 
+    fun isCastAvailable(): Boolean = player.isCastSessionAvailable
+
     private fun applyCurrentPlaybackRateFromPreferences() {
         val current = _uiState.value.current ?: return
         if (current.isLive) return
@@ -229,6 +257,7 @@ class PlayerController(
         _uiState.value = _uiState.value.copy(
             isPlaying = player.isPlaying,
             isBuffering = player.playbackState == Player.STATE_BUFFERING,
+            isRemotePlayback = player.deviceInfo.playbackType == DeviceInfo.PLAYBACK_TYPE_REMOTE,
             durationMs = duration,
             elapsedMs = player.currentPosition.coerceAtLeast(0),
             playbackRate = player.playbackParameters.speed
@@ -239,5 +268,30 @@ class PlayerController(
         progressJob?.cancel()
         mediaSession.release()
         player.release()
+    }
+
+    private fun ensurePlaybackServiceRunning() {
+        ContextCompat.startForegroundService(
+            appContext,
+            Intent(appContext, PlaybackService::class.java)
+        )
+    }
+
+    private fun buildMediaButtons(isLive: Boolean): List<CommandButton> {
+        if (isLive) return emptyList()
+        return listOf(
+            CommandButton.Builder(CommandButton.ICON_SKIP_BACK_30)
+                .setPlayerCommand(Player.COMMAND_SEEK_BACK)
+                .setDisplayName("Cofnij 30 sekund")
+                .build(),
+            CommandButton.Builder(CommandButton.ICON_SKIP_FORWARD_30)
+                .setPlayerCommand(Player.COMMAND_SEEK_FORWARD)
+                .setDisplayName("Przewiń 30 sekund")
+                .build()
+        )
+    }
+
+    private companion object {
+        const val SEEK_INCREMENT_MS = 30_000L
     }
 }

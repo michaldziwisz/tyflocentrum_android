@@ -3,6 +3,7 @@ package org.tyflocentrum.android.ui.common
 import android.content.Intent
 import android.text.method.LinkMovementMethod
 import android.widget.TextView
+import androidx.mediarouter.app.MediaRouteButton
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -79,6 +80,7 @@ import androidx.core.text.HtmlCompat
 import androidx.navigation.NavDestination
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavHostController
+import com.google.android.gms.cast.framework.CastButtonFactory
 import org.tyflocentrum.android.core.model.ContentKind
 import org.tyflocentrum.android.core.model.ContentKindLabelPosition
 import org.tyflocentrum.android.core.model.accessibilityTitle
@@ -478,6 +480,24 @@ fun OpenExternalButton(
     ) {
         Text(label)
     }
+}
+
+@Composable
+fun CastRouteButton(
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+    AndroidView(
+        modifier = modifier.semantics {
+            contentDescription = "Przesyłanie Cast"
+        },
+        factory = {
+            MediaRouteButton(context).apply {
+                contentDescription = "Przesyłanie Cast"
+                CastButtonFactory.setUpMediaRouteButton(context, this)
+            }
+        }
+    )
 }
 
 @Composable
