@@ -419,23 +419,35 @@ fun MagazineIssueScreen(
     issueId: Int
 ) {
     val appContainer = LocalAppContainer.current
-    var issue by remember { mutableStateOf<WpPostDetail?>(null) }
-    var tocItems by remember { mutableStateOf(listOf<org.tyflocentrum.android.core.model.WpPostSummary>()) }
-    var pdfUrl by remember { mutableStateOf<String?>(null) }
+    val cachedState = remember(issueId) { appContainer.repository.peekMagazineIssueScreenCache(issueId) }
+    var issue by remember(issueId) { mutableStateOf(cachedState?.issue) }
+    var tocItems by remember(issueId) { mutableStateOf(cachedState?.tocItems ?: emptyList()) }
+    var pdfUrl by remember(issueId) { mutableStateOf(cachedState?.pdfUrl) }
     var error by remember { mutableStateOf<String?>(null) }
-    var isLoading by remember { mutableStateOf(false) }
+    var isLoading by remember(issueId) { mutableStateOf(cachedState == null) }
     val context = LocalContext.current
 
     LaunchedEffect(issueId) {
-        isLoading = true
+        if (issue == null) {
+            isLoading = true
+        }
         runCatching {
             val page = appContainer.repository.fetchTyfloswiatPage(issueId)
             val children = appContainer.repository.fetchTyfloswiatPageSummaries(issueId)
             Triple(page, children, MagazineParser.extractFirstPdfUrl(page.content.rendered))
         }.onSuccess { (page, children, pdf) ->
+            val orderedToc = MagazineParser.orderedTableOfContents(children, page.content.rendered)
             issue = page
-            tocItems = MagazineParser.orderedTableOfContents(children, page.content.rendered)
+            tocItems = orderedToc
             pdfUrl = pdf
+            appContainer.repository.storeMagazineIssueScreenCache(
+                issueId = issueId,
+                cache = org.tyflocentrum.android.core.network.MagazineIssueScreenCache(
+                    issue = page,
+                    tocItems = orderedToc,
+                    pdfUrl = pdf
+                )
+            )
             error = null
         }.onFailure {
             error = "Nie udało się pobrać numeru czasopisma."

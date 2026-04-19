@@ -10,6 +10,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import org.tyflocentrum.android.core.model.Availability
 import org.tyflocentrum.android.core.model.Category
 import org.tyflocentrum.android.core.model.Comment
+import org.tyflocentrum.android.core.model.NewsItem
 import org.tyflocentrum.android.core.model.PagedResult
 import org.tyflocentrum.android.core.model.RadioSchedule
 import org.tyflocentrum.android.core.model.WpPostDetail
@@ -138,11 +139,89 @@ data class VoiceContactResponse(
     val error: String? = null
 )
 
+data class PagedScreenCache<T>(
+    val items: List<T> = emptyList(),
+    val nextPage: Int = 1,
+    val totalPages: Int? = null
+)
+
+data class NewsScreenCache(
+    val items: List<NewsItem> = emptyList(),
+    val nextPodcastPage: Int = 1,
+    val nextArticlePage: Int = 1,
+    val podcastTotalPages: Int? = null,
+    val articleTotalPages: Int? = null
+)
+
+data class MagazineIssueScreenCache(
+    val issue: WpPostDetail,
+    val tocItems: List<WpPostSummary>,
+    val pdfUrl: String? = null
+)
+
 class TyfloRepository(
     private val podcastApi: WpApiService,
     private val articleApi: WpApiService,
     private val contactApi: ContactApiService
 ) {
+    private var newsScreenCache: NewsScreenCache? = null
+    private var magazineScreenCache: List<WpPostSummary>? = null
+
+    private val podcastListScreenCaches = mutableMapOf<Int, PagedScreenCache<WpPostSummary>>()
+    private val articleListScreenCaches = mutableMapOf<Int, PagedScreenCache<WpPostSummary>>()
+    private val podcastDetailsCache = mutableMapOf<Int, WpPostDetail>()
+    private val articleDetailsCache = mutableMapOf<Int, WpPostDetail>()
+    private val tyfloswiatPageCache = mutableMapOf<Int, WpPostDetail>()
+    private val commentsCache = mutableMapOf<Int, List<Comment>>()
+    private val commentsCountCache = mutableMapOf<Int, Int>()
+    private val magazineIssueScreenCaches = mutableMapOf<Int, MagazineIssueScreenCache>()
+    private val tyfloswiatPagesBySlugCache = mutableMapOf<Pair<String, Int>, List<WpPostSummary>>()
+    private val tyfloswiatPageSummariesCache = mutableMapOf<Pair<Int, Int>, List<WpPostSummary>>()
+
+    fun peekNewsScreenCache(): NewsScreenCache? = newsScreenCache
+
+    fun storeNewsScreenCache(cache: NewsScreenCache) {
+        newsScreenCache = cache
+    }
+
+    fun peekPodcastListScreenCache(categoryId: Int?): PagedScreenCache<WpPostSummary>? {
+        return podcastListScreenCaches[normalizedCategoryKey(categoryId)]
+    }
+
+    fun storePodcastListScreenCache(categoryId: Int?, cache: PagedScreenCache<WpPostSummary>) {
+        podcastListScreenCaches[normalizedCategoryKey(categoryId)] = cache
+    }
+
+    fun peekArticleListScreenCache(categoryId: Int?): PagedScreenCache<WpPostSummary>? {
+        return articleListScreenCaches[normalizedCategoryKey(categoryId)]
+    }
+
+    fun storeArticleListScreenCache(categoryId: Int?, cache: PagedScreenCache<WpPostSummary>) {
+        articleListScreenCaches[normalizedCategoryKey(categoryId)] = cache
+    }
+
+    fun peekMagazineScreenCache(): List<WpPostSummary>? = magazineScreenCache
+
+    fun storeMagazineScreenCache(items: List<WpPostSummary>) {
+        magazineScreenCache = items
+    }
+
+    fun peekPodcastDetail(id: Int): WpPostDetail? = podcastDetailsCache[id]
+
+    fun peekArticleDetail(id: Int): WpPostDetail? = articleDetailsCache[id]
+
+    fun peekTyfloswiatPage(id: Int): WpPostDetail? = tyfloswiatPageCache[id]
+
+    fun peekComments(postId: Int): List<Comment>? = commentsCache[postId]
+
+    fun peekCommentsCount(postId: Int): Int? = commentsCountCache[postId]
+
+    fun peekMagazineIssueScreenCache(issueId: Int): MagazineIssueScreenCache? = magazineIssueScreenCaches[issueId]
+
+    fun storeMagazineIssueScreenCache(issueId: Int, cache: MagazineIssueScreenCache) {
+        magazineIssueScreenCaches[issueId] = cache
+    }
+
     suspend fun fetchPodcastSummariesPage(page: Int, perPage: Int, categoryId: Int? = null): PagedResult<WpPostSummary> {
         return podcastApi.getPostSummaries(perPage = perPage, page = page, categoryId = categoryId).toPagedResult()
     }
@@ -159,9 +238,19 @@ class TyfloRepository(
         return articleApi.getPostSummaries(perPage = 100, page = 1, search = query.trim()).bodyOrThrow()
     }
 
-    suspend fun fetchPodcastDetail(id: Int): WpPostDetail = podcastApi.getPostDetail(id)
+    suspend fun fetchPodcastDetail(id: Int, refresh: Boolean = false): WpPostDetail {
+        if (!refresh) {
+            podcastDetailsCache[id]?.let { return it }
+        }
+        return podcastApi.getPostDetail(id).also { podcastDetailsCache[id] = it }
+    }
 
-    suspend fun fetchArticleDetail(id: Int): WpPostDetail = articleApi.getPostDetail(id)
+    suspend fun fetchArticleDetail(id: Int, refresh: Boolean = false): WpPostDetail {
+        if (!refresh) {
+            articleDetailsCache[id]?.let { return it }
+        }
+        return articleApi.getPostDetail(id).also { articleDetailsCache[id] = it }
+    }
 
     suspend fun fetchPodcastCategoriesPage(page: Int, perPage: Int): PagedResult<Category> {
         return podcastApi.getCategories(perPage = perPage, page = page).toPagedResult()
@@ -171,24 +260,44 @@ class TyfloRepository(
         return articleApi.getCategories(perPage = perPage, page = page).toPagedResult()
     }
 
-    suspend fun fetchComments(postId: Int): List<Comment> = podcastApi.getComments(postId)
+    suspend fun fetchComments(postId: Int, refresh: Boolean = false): List<Comment> {
+        if (!refresh) {
+            commentsCache[postId]?.let { return it }
+        }
+        return podcastApi.getComments(postId).also { commentsCache[postId] = it }
+    }
 
-    suspend fun fetchCommentsCount(postId: Int): Int {
+    suspend fun fetchCommentsCount(postId: Int, refresh: Boolean = false): Int {
+        if (!refresh) {
+            commentsCountCache[postId]?.let { return it }
+        }
         val response = podcastApi.getCommentsPage(postId = postId, page = 1, perPage = 1)
         response.ensureSuccessful()
-        return response.headers()["X-WP-Total"]?.toIntOrNull() ?: response.body().orEmpty().size
+        return (response.headers()["X-WP-Total"]?.toIntOrNull() ?: response.body().orEmpty().size)
+            .also { commentsCountCache[postId] = it }
     }
 
     suspend fun fetchTyfloswiatPages(slug: String, perPage: Int = 100): List<WpPostSummary> {
-        return articleApi.getPageSummaries(perPage = perPage, slug = slug)
+        val key = slug to perPage
+        tyfloswiatPagesBySlugCache[key]?.let { return it }
+        return articleApi.getPageSummaries(perPage = perPage, slug = slug).also {
+            tyfloswiatPagesBySlugCache[key] = it
+        }
     }
 
     suspend fun fetchTyfloswiatPageSummaries(parentPageId: Int, perPage: Int = 100): List<WpPostSummary> {
-        return articleApi.getPageSummaries(perPage = perPage, parentId = parentPageId)
+        val key = parentPageId to perPage
+        tyfloswiatPageSummariesCache[key]?.let { return it }
+        return articleApi.getPageSummaries(perPage = perPage, parentId = parentPageId).also {
+            tyfloswiatPageSummariesCache[key] = it
+        }
     }
 
-    suspend fun fetchTyfloswiatPage(id: Int): WpPostDetail {
-        return articleApi.getPageDetail(id)
+    suspend fun fetchTyfloswiatPage(id: Int, refresh: Boolean = false): WpPostDetail {
+        if (!refresh) {
+            tyfloswiatPageCache[id]?.let { return it }
+        }
+        return articleApi.getPageDetail(id).also { tyfloswiatPageCache[id] = it }
     }
 
     fun getListenableUrl(postId: Int): String {
@@ -225,6 +334,8 @@ class TyfloRepository(
             Unit
         }
     }
+
+    private fun normalizedCategoryKey(categoryId: Int?): Int = categoryId ?: -1
 }
 
 private fun <T> Response<List<T>>.toPagedResult(): PagedResult<T> {

@@ -70,17 +70,21 @@ fun PodcastDetailScreen(
     podcastId: Int
 ) {
     val appContainer = LocalAppContainer.current
+    val cachedDetail = remember(podcastId) { appContainer.repository.peekPodcastDetail(podcastId) }
+    val cachedCommentsCount = remember(podcastId) { appContainer.repository.peekCommentsCount(podcastId) }
     val favorites by appContainer.preferencesRepository.favoritesFlow.collectAsStateWithLifecycle(emptyList())
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
-    var detail by remember { mutableStateOf<WpPostDetail?>(null) }
-    var commentsCount by remember { mutableStateOf<Int?>(null) }
+    var detail by remember(podcastId) { mutableStateOf(cachedDetail) }
+    var commentsCount by remember(podcastId) { mutableStateOf(cachedCommentsCount) }
     var error by remember { mutableStateOf<String?>(null) }
-    var isLoading by remember { mutableStateOf(false) }
+    var isLoading by remember(podcastId) { mutableStateOf(cachedDetail == null) }
 
     LaunchedEffect(podcastId) {
-        isLoading = true
+        if (detail == null) {
+            isLoading = true
+        }
         runCatching {
             val loaded = appContainer.repository.fetchPodcastDetail(podcastId)
             val count = runCatching { appContainer.repository.fetchCommentsCount(podcastId) }.getOrNull()
@@ -193,16 +197,24 @@ fun ArticleDetailScreen(
     origin: FavoriteArticleOrigin
 ) {
     val appContainer = LocalAppContainer.current
+    val cachedDetail = remember(articleId, origin) {
+        when (origin) {
+            FavoriteArticleOrigin.POST -> appContainer.repository.peekArticleDetail(articleId)
+            FavoriteArticleOrigin.PAGE -> appContainer.repository.peekTyfloswiatPage(articleId)
+        }
+    }
     val favorites by appContainer.preferencesRepository.favoritesFlow.collectAsStateWithLifecycle(emptyList())
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
-    var detail by remember { mutableStateOf<WpPostDetail?>(null) }
+    var detail by remember(articleId, origin) { mutableStateOf(cachedDetail) }
     var error by remember { mutableStateOf<String?>(null) }
-    var isLoading by remember { mutableStateOf(false) }
+    var isLoading by remember(articleId, origin) { mutableStateOf(cachedDetail == null) }
 
     LaunchedEffect(articleId, origin) {
-        isLoading = true
+        if (detail == null) {
+            isLoading = true
+        }
         runCatching {
             when (origin) {
                 FavoriteArticleOrigin.POST -> appContainer.repository.fetchArticleDetail(articleId)
@@ -291,12 +303,15 @@ fun PodcastCommentsScreen(
     postId: Int
 ) {
     val appContainer = LocalAppContainer.current
-    var comments by remember { mutableStateOf(listOf<org.tyflocentrum.android.core.model.Comment>()) }
-    var isLoading by remember { mutableStateOf(false) }
+    val cachedComments = remember(postId) { appContainer.repository.peekComments(postId).orEmpty() }
+    var comments by remember(postId) { mutableStateOf(cachedComments) }
+    var isLoading by remember(postId) { mutableStateOf(cachedComments.isEmpty()) }
     var error by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(postId) {
-        isLoading = true
+        if (comments.isEmpty()) {
+            isLoading = true
+        }
         runCatching {
             appContainer.repository.fetchComments(postId)
         }.onSuccess {

@@ -48,6 +48,8 @@ import org.tyflocentrum.android.core.model.NewsItem
 import org.tyflocentrum.android.core.model.SearchItem
 import org.tyflocentrum.android.core.model.SearchRanking
 import org.tyflocentrum.android.core.model.WpPostSummary
+import org.tyflocentrum.android.core.network.NewsScreenCache
+import org.tyflocentrum.android.core.network.PagedScreenCache
 import org.tyflocentrum.android.ui.AppRoutes
 import org.tyflocentrum.android.ui.LocalAppContainer
 import org.tyflocentrum.android.ui.common.Announcement
@@ -65,20 +67,37 @@ fun NewsScreen(
     rootDestination: RootDestination
 ) {
     val appContainer = LocalAppContainer.current
+    val cachedState = remember { appContainer.repository.peekNewsScreenCache() }
     val settings by appContainer.preferencesRepository.settingsFlow.collectAsStateWithLifecycle(AppSettings())
     val favorites by appContainer.preferencesRepository.favoritesFlow.collectAsStateWithLifecycle(emptyList())
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
 
-    val items = remember { mutableStateListOf<NewsItem>() }
+    val items = remember {
+        mutableStateListOf<NewsItem>().apply {
+            addAll(cachedState?.items.orEmpty())
+        }
+    }
     var errorMessage by remember { mutableStateOf<String?>(null) }
-    var isLoading by remember { mutableStateOf(false) }
+    var isLoading by remember { mutableStateOf(cachedState == null) }
     var isLoadingMore by remember { mutableStateOf(false) }
-    var podcastPage by remember { mutableIntStateOf(1) }
-    var articlePage by remember { mutableIntStateOf(1) }
-    var podcastTotalPages by remember { mutableStateOf<Int?>(null) }
-    var articleTotalPages by remember { mutableStateOf<Int?>(null) }
+    var podcastPage by remember { mutableIntStateOf(cachedState?.nextPodcastPage ?: 1) }
+    var articlePage by remember { mutableIntStateOf(cachedState?.nextArticlePage ?: 1) }
+    var podcastTotalPages by remember { mutableStateOf(cachedState?.podcastTotalPages) }
+    var articleTotalPages by remember { mutableStateOf(cachedState?.articleTotalPages) }
+
+    fun syncCache() {
+        appContainer.repository.storeNewsScreenCache(
+            NewsScreenCache(
+                items = items.toList(),
+                nextPodcastPage = podcastPage,
+                nextArticlePage = articlePage,
+                podcastTotalPages = podcastTotalPages,
+                articleTotalPages = articleTotalPages
+            )
+        )
+    }
 
     fun mergeAndStore(next: List<NewsItem>, reset: Boolean) {
         val merged = (if (reset) emptyList() else items.toList()) + next
@@ -91,6 +110,7 @@ fun NewsScreen(
             )
         items.clear()
         items.addAll(sorted)
+        syncCache()
     }
 
     fun canLoadMore(): Boolean {
@@ -141,6 +161,7 @@ fun NewsScreen(
                 articleTotalPages = articles?.totalPages ?: articleTotalPages
                 if (podcasts != null) podcastPage = currentPodcastPage + 1
                 if (articles != null) articlePage = currentArticlePage + 1
+                syncCache()
                 errorMessage = if (items.isEmpty()) "Nie udało się pobrać danych. Spróbuj ponownie." else null
             }.onFailure {
                 errorMessage = "Nie udało się pobrać danych. Spróbuj ponownie."
@@ -469,16 +490,32 @@ fun PodcastListScreen(
     categoryId: Int?
 ) {
     val appContainer = LocalAppContainer.current
+    val cachedState = remember(categoryId) { appContainer.repository.peekPodcastListScreenCache(categoryId) }
     val settings by appContainer.preferencesRepository.settingsFlow.collectAsStateWithLifecycle(AppSettings())
     val favorites by appContainer.preferencesRepository.favoritesFlow.collectAsStateWithLifecycle(emptyList())
     val scope = rememberCoroutineScope()
-    val items = remember { mutableStateListOf<WpPostSummary>() }
+    val items = remember(categoryId) {
+        mutableStateListOf<WpPostSummary>().apply {
+            addAll(cachedState?.items.orEmpty())
+        }
+    }
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
-    var page by remember { mutableIntStateOf(1) }
-    var totalPages by remember { mutableStateOf<Int?>(null) }
+    var page by remember(categoryId) { mutableIntStateOf(cachedState?.nextPage ?: 1) }
+    var totalPages by remember(categoryId) { mutableStateOf(cachedState?.totalPages) }
     var error by remember { mutableStateOf<String?>(null) }
-    var isLoading by remember { mutableStateOf(false) }
+    var isLoading by remember(categoryId) { mutableStateOf(cachedState == null) }
+
+    fun syncCache() {
+        appContainer.repository.storePodcastListScreenCache(
+            categoryId = categoryId,
+            cache = PagedScreenCache(
+                items = items.toList(),
+                nextPage = page,
+                totalPages = totalPages
+            )
+        )
+    }
 
     fun load(reset: Boolean) {
         scope.launch {
@@ -494,6 +531,7 @@ fun PodcastListScreen(
                 items.addAll(response.items.filterNot { newItem -> items.any { it.id == newItem.id } })
                 totalPages = response.totalPages
                 page += 1
+                syncCache()
                 error = null
             }.onFailure {
                 error = "Nie udało się pobrać podcastów."
@@ -574,16 +612,32 @@ fun ArticleListScreen(
     categoryId: Int?
 ) {
     val appContainer = LocalAppContainer.current
+    val cachedState = remember(categoryId) { appContainer.repository.peekArticleListScreenCache(categoryId) }
     val settings by appContainer.preferencesRepository.settingsFlow.collectAsStateWithLifecycle(AppSettings())
     val favorites by appContainer.preferencesRepository.favoritesFlow.collectAsStateWithLifecycle(emptyList())
     val scope = rememberCoroutineScope()
-    val items = remember { mutableStateListOf<WpPostSummary>() }
+    val items = remember(categoryId) {
+        mutableStateListOf<WpPostSummary>().apply {
+            addAll(cachedState?.items.orEmpty())
+        }
+    }
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
-    var page by remember { mutableIntStateOf(1) }
-    var totalPages by remember { mutableStateOf<Int?>(null) }
+    var page by remember(categoryId) { mutableIntStateOf(cachedState?.nextPage ?: 1) }
+    var totalPages by remember(categoryId) { mutableStateOf(cachedState?.totalPages) }
     var error by remember { mutableStateOf<String?>(null) }
-    var isLoading by remember { mutableStateOf(false) }
+    var isLoading by remember(categoryId) { mutableStateOf(cachedState == null) }
+
+    fun syncCache() {
+        appContainer.repository.storeArticleListScreenCache(
+            categoryId = categoryId,
+            cache = PagedScreenCache(
+                items = items.toList(),
+                nextPage = page,
+                totalPages = totalPages
+            )
+        )
+    }
 
     fun load(reset: Boolean) {
         scope.launch {
@@ -599,6 +653,7 @@ fun ArticleListScreen(
                 items.addAll(response.items.filterNot { newItem -> items.any { it.id == newItem.id } })
                 totalPages = response.totalPages
                 page += 1
+                syncCache()
                 error = null
             }.onFailure {
                 error = "Nie udało się pobrać artykułów."
@@ -836,8 +891,13 @@ fun MagazineScreen(
 ) {
     val appContainer = LocalAppContainer.current
     val scope = rememberCoroutineScope()
-    val issues = remember { mutableStateListOf<WpPostSummary>() }
-    var isLoading by remember { mutableStateOf(false) }
+    val cachedIssues = remember { appContainer.repository.peekMagazineScreenCache().orEmpty() }
+    val issues = remember {
+        mutableStateListOf<WpPostSummary>().apply {
+            addAll(cachedIssues)
+        }
+    }
+    var isLoading by remember { mutableStateOf(cachedIssues.isEmpty()) }
     var error by remember { mutableStateOf<String?>(null) }
 
     fun load() {
@@ -853,6 +913,7 @@ fun MagazineScreen(
             }.onSuccess { fetched ->
                 issues.clear()
                 issues.addAll(fetched)
+                appContainer.repository.storeMagazineScreenCache(fetched)
                 error = null
             }.onFailure {
                 error = "Nie udało się pobrać numerów czasopisma."
