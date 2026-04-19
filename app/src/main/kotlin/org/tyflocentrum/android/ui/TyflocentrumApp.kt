@@ -36,6 +36,8 @@ val LocalAppContainer = staticCompositionLocalOf<AppContainer> {
     error("AppContainer not provided")
 }
 
+private const val NULL_ROUTE_SEGMENT = "__null__"
+
 object AppRoutes {
     const val NEWS = "news"
     const val PODCASTS = "podcasts"
@@ -75,7 +77,7 @@ object AppRoutes {
         append("/")
         append(title.encoded())
         append("/")
-        append((subtitle ?: "").encoded())
+        append(subtitle?.takeUnless { it.isBlank() }?.encoded() ?: NULL_ROUTE_SEGMENT)
         append("/")
         append(if (live) "1" else "0")
         append("/")
@@ -208,7 +210,8 @@ fun TyflocentrumApp(
                     navController = navController,
                     url = Uri.decode(entry.arguments?.getString("url").orEmpty()),
                     title = Uri.decode(entry.arguments?.getString("title").orEmpty()),
-                    subtitle = Uri.decode(entry.arguments?.getString("subtitle").orEmpty()).ifBlank { null },
+                    subtitle = Uri.decode(entry.arguments?.getString("subtitle").orEmpty())
+                        .takeUnless { it == NULL_ROUTE_SEGMENT || it.isBlank() },
                     isLive = entry.arguments?.getString("live") == "1",
                     postId = entry.arguments?.getInt("postId")?.takeIf { it >= 0 },
                     seekMs = entry.arguments?.getLong("seekMs")?.takeIf { it >= 0L }
