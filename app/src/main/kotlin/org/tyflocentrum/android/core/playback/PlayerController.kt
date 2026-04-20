@@ -289,6 +289,7 @@ class PlayerController(
 
     private companion object {
         const val SEEK_INCREMENT_MS = 30_000L
+        const val RADIO_CAST_STREAM_URL = "https://radio.tyflopodcast.net/"
     }
 
     private suspend fun resolvePlaybackRate(request: PlayerRequest): Float {
@@ -301,6 +302,9 @@ class PlayerController(
     }
 
     private fun buildMediaItem(request: PlayerRequest): MediaItem {
+        val metadataBuilder = MediaMetadata.Builder()
+            .setTitle(request.title)
+            .setArtist(request.subtitle)
         return MediaItem.Builder()
             .setMediaId(request.url)
             .setUri(request.url)
@@ -308,16 +312,17 @@ class PlayerController(
                 if (request.isLive) {
                     setMimeType(MimeTypes.APPLICATION_M3U8)
                     setLiveConfiguration(MediaItem.LiveConfiguration.Builder().build())
+                    metadataBuilder.setExtras(
+                        LiveAwareMediaItemConverter.castExtras(
+                            url = RADIO_CAST_STREAM_URL,
+                            mimeType = MimeTypes.AUDIO_MPEG
+                        )
+                    )
                 } else if (request.url.endsWith(".m3u8", ignoreCase = true)) {
                     setMimeType(MimeTypes.APPLICATION_M3U8)
                 }
             }
-            .setMediaMetadata(
-                MediaMetadata.Builder()
-                    .setTitle(request.title)
-                    .setArtist(request.subtitle)
-                    .build()
-            )
+            .setMediaMetadata(metadataBuilder.build())
             .build()
     }
 

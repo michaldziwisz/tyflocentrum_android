@@ -1,8 +1,10 @@
 package org.tyflocentrum.android.core.playback
 
+import android.os.Bundle
 import androidx.media3.cast.DefaultMediaItemConverter
 import androidx.media3.cast.MediaItemConverter
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MimeTypes
 import com.google.android.gms.cast.MediaInfo
 import com.google.android.gms.cast.MediaQueueItem
 
@@ -16,10 +18,13 @@ class LiveAwareMediaItemConverter(
         }
 
         val mediaInfo = queueItem.media ?: return queueItem
-        val rebuiltMediaInfo = MediaInfo.Builder(mediaInfo.contentId).apply {
-            mediaInfo.contentUrl?.let(::setContentUrl)
+        val castStreamUrl = mediaItem.mediaMetadata.extras?.getString(EXTRA_CAST_STREAM_URL)
+        val castMimeType = mediaItem.mediaMetadata.extras?.getString(EXTRA_CAST_MIME_TYPE)
+        val castContentId = castStreamUrl ?: mediaInfo.contentId
+        val rebuiltMediaInfo = MediaInfo.Builder(castContentId).apply {
+            (castStreamUrl ?: mediaInfo.contentUrl)?.let(::setContentUrl)
             setStreamType(MediaInfo.STREAM_TYPE_LIVE)
-            setContentType(mediaInfo.contentType ?: "application/x-mpegURL")
+            setContentType(castMimeType ?: mediaInfo.contentType ?: MimeTypes.APPLICATION_M3U8)
             mediaInfo.metadata?.let(::setMetadata)
             mediaInfo.customData?.let(::setCustomData)
         }.build()
@@ -46,5 +51,17 @@ class LiveAwareMediaItemConverter(
 
     private fun MediaItem.isLiveItem(): Boolean {
         return liveConfiguration != MediaItem.LiveConfiguration.UNSET
+    }
+
+    companion object {
+        const val EXTRA_CAST_STREAM_URL: String = "cast_stream_url"
+        const val EXTRA_CAST_MIME_TYPE: String = "cast_mime_type"
+
+        fun castExtras(url: String, mimeType: String): Bundle {
+            return Bundle().apply {
+                putString(EXTRA_CAST_STREAM_URL, url)
+                putString(EXTRA_CAST_MIME_TYPE, mimeType)
+            }
+        }
     }
 }
