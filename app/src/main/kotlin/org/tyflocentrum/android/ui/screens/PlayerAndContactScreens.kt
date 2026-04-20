@@ -60,6 +60,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -555,12 +556,26 @@ fun ContactTextMessageScreen(
     val scope = rememberCoroutineScope()
     val nameFocusRequester = remember { FocusRequester() }
     val messageFocusRequester = remember { FocusRequester() }
-    var name by remember { mutableStateOf(draft.name) }
-    var message by remember { mutableStateOf(draft.message) }
+    var name by rememberSaveable { mutableStateOf("") }
+    var message by rememberSaveable { mutableStateOf("") }
+    var didEditName by rememberSaveable { mutableStateOf(false) }
+    var didEditMessage by rememberSaveable { mutableStateOf(false) }
     var isSending by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var nameError by remember { mutableStateOf<String?>(null) }
     var messageError by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(draft.name) {
+        if (!didEditName) {
+            name = draft.name
+        }
+    }
+
+    LaunchedEffect(draft.message) {
+        if (!didEditMessage) {
+            message = draft.message
+        }
+    }
 
     LaunchedEffect(nameError, messageError) {
         when {
@@ -578,12 +593,13 @@ fun ContactTextMessageScreen(
             OutlinedTextField(
                 value = name,
                 onValueChange = {
+                    didEditName = true
                     name = it
                     nameError = null
                     error = null
                     scope.launch { appContainer.preferencesRepository.updateContactDraft(name = it) }
                 },
-                label = { Text("Imię") },
+                label = { Text("Nick lub imię") },
                 modifier = Modifier
                     .fillMaxWidth()
                     .focusRequester(nameFocusRequester),
@@ -596,6 +612,7 @@ fun ContactTextMessageScreen(
             OutlinedTextField(
                 value = message,
                 onValueChange = {
+                    didEditMessage = true
                     message = it
                     messageError = null
                     error = null
@@ -617,7 +634,7 @@ fun ContactTextMessageScreen(
                 onClick = {
                     val trimmedName = name.trim()
                     val trimmedMessage = message.trim()
-                    nameError = if (trimmedName.isBlank()) "Wpisz imię." else null
+                    nameError = if (trimmedName.isBlank()) "Wpisz nick lub imię." else null
                     messageError = if (trimmedMessage.isBlank()) "Wpisz treść wiadomości." else null
                     if (nameError != null || messageError != null) {
                         error = "Popraw pola oznaczone jako błędne."
@@ -658,7 +675,8 @@ fun ContactVoiceMessageScreen(
     val recorderState by recorder.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     val nameFocusRequester = remember { FocusRequester() }
-    var name by remember { mutableStateOf(draft.name) }
+    var name by rememberSaveable { mutableStateOf("") }
+    var didEditName by rememberSaveable { mutableStateOf(false) }
     var isSending by remember { mutableStateOf(false) }
     var earModeEnabled by remember { mutableStateOf(false) }
     var holdLocked by remember { mutableStateOf(false) }
@@ -672,6 +690,12 @@ fun ContactVoiceMessageScreen(
     }
     val proximitySensor = remember { sensorManager.getDefaultSensor(Sensor.TYPE_PROXIMITY) }
     val supportsEarMode = proximitySensor != null
+
+    LaunchedEffect(draft.name) {
+        if (!didEditName) {
+            name = draft.name
+        }
+    }
 
     LaunchedEffect(nameError) {
         if (nameError != null) {
@@ -739,12 +763,13 @@ fun ContactVoiceMessageScreen(
             OutlinedTextField(
                 value = name,
                 onValueChange = {
+                    didEditName = true
                     name = it
                     nameError = null
                     formMessage = null
                     scope.launch { appContainer.preferencesRepository.updateContactDraft(name = it) }
                 },
-                label = { Text("Imię") },
+                label = { Text("Nick lub imię") },
                 modifier = Modifier
                     .fillMaxWidth()
                     .focusRequester(nameFocusRequester),
@@ -894,8 +919,8 @@ fun ContactVoiceMessageScreen(
                     onClick = {
                         val trimmedName = name.trim()
                         if (trimmedName.isBlank()) {
-                            nameError = "Wpisz imię przed wysłaniem głosówki."
-                            formMessage = "Imię jest wymagane do wysłania nagrania."
+                            nameError = "Wpisz nick lub imię przed wysłaniem głosówki."
+                            formMessage = "Nick lub imię są wymagane do wysłania nagrania."
                             return@Button
                         }
                         val file = recorder.recordedFileOrNull ?: return@Button
