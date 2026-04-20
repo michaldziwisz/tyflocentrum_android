@@ -7,9 +7,11 @@ import androidx.media3.common.C
 import androidx.media3.common.DeviceInfo
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
+import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.cast.CastPlayer
+import androidx.media3.cast.RemoteCastPlayer
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.CommandButton
 import androidx.media3.session.MediaSession
@@ -52,8 +54,14 @@ class PlayerController(
         .setSeekForwardIncrementMs(SEEK_INCREMENT_MS)
         .setHandleAudioBecomingNoisy(true)
         .build()
+    private val remotePlayer = RemoteCastPlayer.Builder(appContext)
+        .setMediaItemConverter(LiveAwareMediaItemConverter())
+        .setSeekBackIncrementMs(SEEK_INCREMENT_MS)
+        .setSeekForwardIncrementMs(SEEK_INCREMENT_MS)
+        .build()
     private val player = CastPlayer.Builder(appContext)
         .setLocalPlayer(localPlayer)
+        .setRemotePlayer(remotePlayer)
         .build()
     val mediaSession: MediaSession = MediaSession.Builder(appContext, player)
         .setMediaButtonPreferences(buildMediaButtons(isLive = false))
@@ -114,7 +122,7 @@ class PlayerController(
         scope.launch {
             runCatching {
                 ensurePlaybackServiceRunning()
-                val sameItem = _uiState.value.current?.url == request.url
+                val sameItem = _uiState.value.current?.url == request.url && hasLoadedMediaItemFor(request)
                 val startPosition = when {
                     request.isLive -> C.TIME_UNSET
                     request.initialSeekMs != null -> request.initialSeekMs
@@ -122,15 +130,7 @@ class PlayerController(
                 } ?: C.TIME_UNSET
 
                 if (!sameItem) {
-                    val mediaItem = MediaItem.Builder()
-                        .setUri(request.url)
-                        .setMediaMetadata(
-                            MediaMetadata.Builder()
-                                .setTitle(request.title)
-                                .setArtist(request.subtitle)
-                                .build()
-                        )
-                        .build()
+                    val mediaItem = buildMediaItem(request)
                     player.setMediaItem(mediaItem, startPosition)
                     mediaSession.setMediaButtonPreferences(buildMediaButtons(isLive = request.isLive))
                     player.prepare()
@@ -139,11 +139,7 @@ class PlayerController(
                     player.seekTo(startPosition)
                 }
 
-                val preferredRate = when (settingsSnapshot.playbackRateRememberMode) {
-                    PlaybackRateRememberMode.GLOBAL -> preferences.loadPlaybackRateGlobal()
-                    PlaybackRateRememberMode.PER_EPISODE -> preferences.loadPlaybackRateForUrl(request.url)
-                } ?: 1f
-                player.setPlaybackSpeed(PlaybackRatePolicy.normalized(preferredRate))
+                player.setPlaybackSpeed(resolvePlaybackRate(request))
                 player.playWhenReady = true
                 updateUiState()
             }.onFailure { error ->
@@ -209,9 +205,14 @@ class PlayerController(
 
     fun setPlaybackRate(rate: Float) {
         scope.launch {
+            val current = _uiState.value.current
+            if (current?.isLive == true) {
+                player.setPlaybackSpeed(1f)
+                updateUiState()
+                return@launch
+            }
             val normalized = PlaybackRatePolicy.normalized(rate)
             player.setPlaybackSpeed(normalized)
-            val current = _uiState.value.current
             when (settingsSnapshot.playbackRateRememberMode) {
                 PlaybackRateRememberMode.GLOBAL -> preferences.savePlaybackRateGlobal(normalized)
                 PlaybackRateRememberMode.PER_EPISODE -> current?.takeIf { !it.isLive }?.let {
@@ -230,13 +231,8 @@ class PlayerController(
 
     private fun applyCurrentPlaybackRateFromPreferences() {
         val current = _uiState.value.current ?: return
-        if (current.isLive) return
         scope.launch {
-            val preferredRate = when (settingsSnapshot.playbackRateRememberMode) {
-                PlaybackRateRememberMode.GLOBAL -> preferences.loadPlaybackRateGlobal()
-                PlaybackRateRememberMode.PER_EPISODE -> preferences.loadPlaybackRateForUrl(current.url)
-            } ?: 1f
-            player.setPlaybackSpeed(PlaybackRatePolicy.normalized(preferredRate))
+            player.setPlaybackSpeed(resolvePlaybackRate(current))
             updateUiState()
         }
     }
@@ -293,5 +289,43 @@ class PlayerController(
 
     private companion object {
         const val SEEK_INCREMENT_MS = 30_000L
+    }
+
+    private suspend fun resolvePlaybackRate(request: PlayerRequest): Float {
+        if (request.isLive) return 1f
+        val preferredRate = when (settingsSnapshot.playbackRateRememberMode) {
+            PlaybackRateRememberMode.GLOBAL -> preferences.loadPlaybackRateGlobal()
+            PlaybackRateRememberMode.PER_EPISODE -> preferences.loadPlaybackRateForUrl(request.url)
+        } ?: 1f
+        return PlaybackRatePolicy.normalized(preferredRate)
+    }
+
+    private fun buildMediaItem(request: PlayerRequest): MediaItem {
+        return MediaItem.Builder()
+            .setMediaId(request.url)
+            .setUri(request.url)
+            .apply {
+                if (request.isLive) {
+                    setMimeType(MimeTypes.APPLICATION_M3U8)
+                    setLiveConfiguration(MediaItem.LiveConfiguration.Builder().build())
+                } else if (request.url.endsWith(".m3u8", ignoreCase = true)) {
+                    setMimeType(MimeTypes.APPLICATION_M3U8)
+                }
+            }
+            .setMediaMetadata(
+                MediaMetadata.Builder()
+                    .setTitle(request.title)
+                    .setArtist(request.subtitle)
+                    .build()
+            )
+            .build()
+    }
+
+    private fun hasLoadedMediaItemFor(request: PlayerRequest): Boolean {
+        val currentItem = player.currentMediaItem ?: return false
+        val currentUrl = currentItem.localConfiguration?.uri?.toString()
+            ?: currentItem.requestMetadata.mediaUri?.toString()
+            ?: currentItem.mediaId.takeIf { it.isNotBlank() }
+        return currentUrl == request.url
     }
 }
