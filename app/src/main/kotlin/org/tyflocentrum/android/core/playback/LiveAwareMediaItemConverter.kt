@@ -25,6 +25,7 @@ class LiveAwareMediaItemConverter(
             (castStreamUrl ?: mediaInfo.contentUrl)?.let(::setContentUrl)
             setStreamType(MediaInfo.STREAM_TYPE_LIVE)
             setContentType(castMimeType ?: mediaInfo.contentType ?: MimeTypes.APPLICATION_M3U8)
+            setStreamDuration(MediaInfo.UNKNOWN_DURATION)
             mediaInfo.metadata?.let(::setMetadata)
             mediaInfo.customData?.let(::setCustomData)
         }.build()

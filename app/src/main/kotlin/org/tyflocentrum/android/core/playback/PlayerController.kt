@@ -312,6 +312,12 @@ class PlayerController(
                 if (request.isLive) {
                     setMimeType(MimeTypes.APPLICATION_M3U8)
                     setLiveConfiguration(MediaItem.LiveConfiguration.Builder().build())
+                    metadataBuilder
+                        .setMediaType(MediaMetadata.MEDIA_TYPE_RADIO_STATION)
+                        .setAlbumTitle(request.title)
+                        .setArtist(request.subtitle ?: "Transmisja na żywo")
+                        .setAlbumArtist(request.title)
+                        .setStation(request.title)
                     metadataBuilder.setExtras(
                         LiveAwareMediaItemConverter.castExtras(
                             url = RADIO_CAST_STREAM_URL,
