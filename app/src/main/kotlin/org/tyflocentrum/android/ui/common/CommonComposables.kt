@@ -309,6 +309,13 @@ fun ContentListItem(
     val accessibilityTitle = remember(title, kind, contentKindLabelPosition) {
         kind?.accessibilityTitle(title, contentKindLabelPosition) ?: title
     }
+    val accessibilityDescription = remember(accessibilityTitle, supportingText, date) {
+        listOfNotNull(
+            accessibilityTitle,
+            supportingText?.takeIf { it.isNotBlank() },
+            date.takeIf { it.isNotBlank() }
+        ).joinToString(", ")
+    }
     val customActions = remember(onListen, onCopyLink, favoriteLabel, onToggleFavorite) {
         buildList {
             if (onListen != null) {
@@ -337,8 +344,7 @@ fun ContentListItem(
             .fillMaxWidth()
             .padding(vertical = 4.dp)
             .clearAndSetSemantics {
-                contentDescription = accessibilityTitle
-                stateDescription = listOfNotNull(date, supportingText).joinToString(", ")
+                contentDescription = accessibilityDescription
                 onClick(label = "Otwórz szczegóły") {
                     onOpen()
                     true
