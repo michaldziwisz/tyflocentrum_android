@@ -248,6 +248,11 @@ data class RelatedLink(
     val id: String = "$title-$url"
 }
 
+data class ShowNotesData(
+    val markers: List<ChapterMarker> = emptyList(),
+    val links: List<RelatedLink> = emptyList()
+)
+
 data class PlayerRequest(
     val url: String,
     val title: String,

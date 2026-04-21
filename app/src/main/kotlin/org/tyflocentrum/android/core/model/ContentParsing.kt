@@ -53,15 +53,80 @@ object ShowNotesParser {
     }
 
     private fun normalizedLines(html: String): List<String> {
-        return Jsoup.parse(html).text()
-            .split('\n', '\r')
+        return htmlToPlainText(html)
+            .split(Regex("""\R+"""))
             .map { it.trim() }
             .filter { it.isNotBlank() }
     }
 
+    private fun htmlToPlainText(html: String): String {
+        val preparedHtml = buildString(html.length + 32) {
+            var isInsideTag = false
+            var isCollectingTagName = false
+            var isClosingTag = false
+            val tagName = StringBuilder()
+
+            fun appendNewlineIfNeeded() {
+                if (isEmpty() || last() != '\n') {
+                    append('\n')
+                }
+            }
+
+            fun handleTagName(name: String, closing: Boolean) {
+                if (name.isEmpty()) return
+                when (name.lowercase(Locale.ROOT)) {
+                    "br" -> appendNewlineIfNeeded()
+                    "p", "div", "li", "tr", "h1", "h2", "h3", "h4", "h5", "h6" -> appendNewlineIfNeeded()
+                    "a" -> if (closing) appendNewlineIfNeeded()
+                }
+            }
+
+            html.forEach { character ->
+                when {
+                    !isInsideTag -> {
+                        if (character == '<') {
+                            isInsideTag = true
+                            isCollectingTagName = false
+                            isClosingTag = false
+                            tagName.setLength(0)
+                        } else {
+                            append(character)
+                        }
+                    }
+                    character == '>' -> {
+                        isInsideTag = false
+                        handleTagName(tagName.toString(), isClosingTag)
+                    }
+                    tagName.isEmpty() && !isCollectingTagName -> {
+                        when {
+                            character == '/' -> isClosingTag = true
+                            character.isWhitespace() -> Unit
+                            else -> {
+                                isCollectingTagName = true
+                                tagName.append(character.lowercaseChar())
+                            }
+                        }
+                    }
+                    isCollectingTagName -> {
+                        if (character.isLetterOrDigit()) {
+                            tagName.append(character.lowercaseChar())
+                        } else {
+                            isCollectingTagName = false
+                        }
+                    }
+                }
+            }
+        }
+
+        return Jsoup.parseBodyFragment(preparedHtml)
+            .body()
+            .wholeText()
+            .replace('\u00A0', ' ')
+    }
+
     private fun parseMarkers(lines: List<String>): List<ChapterMarker> {
         val headerIndex = lines.indexOfFirst {
-            val normalized = it.lowercase(Locale("pl", "PL"))
+            val normalized = it.lowercase(Locale("pl", "PL")).trim()
             normalized.startsWith("znaczniki czasu") || normalized.startsWith("znaczniki czasowe")
         }
         if (headerIndex == -1) return emptyList()
@@ -80,7 +145,8 @@ object ShowNotesParser {
     private fun parseLinks(lines: List<String>): List<RelatedLink> {
         val headerIndex = lines.indexOfFirst {
             val normalized = it.lowercase(Locale("pl", "PL"))
-            normalized.contains("odnośnik") || normalized.contains("odnosnik") || normalized.contains("linki")
+            normalized.contains("odnośnik") || normalized.contains("odnosnik") ||
+                normalized.contains("odnośniki") || normalized.contains("linki")
         }
         if (headerIndex == -1) return emptyList()
 
@@ -119,7 +185,8 @@ object ShowNotesParser {
                 return@forEach
             }
 
-            emailRegex.find(trimmed)?.value?.let { email ->
+            val compact = trimmed.replace(" ", "")
+            emailRegex.find(compact)?.value?.let { email ->
                 flushCurrent()
                 val label = trimmed.substringBefore(':').trim().ifBlank { "E-mail" }
                 result += RelatedLink(label, "mailto:$email")

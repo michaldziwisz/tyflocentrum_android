@@ -13,6 +13,7 @@ import org.tyflocentrum.android.core.model.Comment
 import org.tyflocentrum.android.core.model.NewsItem
 import org.tyflocentrum.android.core.model.PagedResult
 import org.tyflocentrum.android.core.model.RadioSchedule
+import org.tyflocentrum.android.core.model.ShowNotesData
 import org.tyflocentrum.android.core.model.WpPostDetail
 import org.tyflocentrum.android.core.model.WpPostSummary
 import retrofit2.Response
@@ -174,6 +175,7 @@ class TyfloRepository(
     private val tyfloswiatPageCache = mutableMapOf<Int, WpPostDetail>()
     private val commentsCache = mutableMapOf<Int, List<Comment>>()
     private val commentsCountCache = mutableMapOf<Int, Int>()
+    private val showNotesCache = mutableMapOf<Int, ShowNotesData>()
     private val magazineIssueScreenCaches = mutableMapOf<Int, MagazineIssueScreenCache>()
     private val tyfloswiatPagesBySlugCache = mutableMapOf<Pair<String, Int>, List<WpPostSummary>>()
     private val tyfloswiatPageSummariesCache = mutableMapOf<Pair<Int, Int>, List<WpPostSummary>>()
@@ -215,6 +217,12 @@ class TyfloRepository(
     fun peekComments(postId: Int): List<Comment>? = commentsCache[postId]
 
     fun peekCommentsCount(postId: Int): Int? = commentsCountCache[postId]
+
+    fun peekShowNotes(postId: Int): ShowNotesData? = showNotesCache[postId]
+
+    fun storeShowNotes(postId: Int, data: ShowNotesData) {
+        showNotesCache[postId] = data
+    }
 
     fun peekMagazineIssueScreenCache(issueId: Int): MagazineIssueScreenCache? = magazineIssueScreenCaches[issueId]
 

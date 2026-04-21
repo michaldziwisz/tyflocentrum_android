@@ -24,6 +24,8 @@ import org.tyflocentrum.android.ui.screens.MagazineScreen
 import org.tyflocentrum.android.ui.screens.MagazineIssueScreen
 import org.tyflocentrum.android.ui.screens.NewsScreen
 import org.tyflocentrum.android.ui.screens.PlayerScreen
+import org.tyflocentrum.android.ui.screens.PlayerChapterMarkersScreen
+import org.tyflocentrum.android.ui.screens.PlayerRelatedLinksScreen
 import org.tyflocentrum.android.ui.screens.PodcastCommentsScreen
 import org.tyflocentrum.android.ui.screens.PodcastDetailScreen
 import org.tyflocentrum.android.ui.screens.PodcastListScreen
@@ -53,6 +55,8 @@ object AppRoutes {
     const val MAGAZINE = "magazine"
     const val MAGAZINE_ISSUE = "magazineIssue/{id}"
     const val COMMENTS = "comments/{postId}"
+    const val PLAYER_MARKERS = "playerMarkers/{postId}/{title}/{subtitle}"
+    const val PLAYER_LINKS = "playerLinks/{postId}/{title}/{subtitle}"
     const val PLAYER = "player/{url}/{title}/{subtitle}/{live}/{postId}/{seekMs}"
     const val CONTACT_MENU = "contactMenu"
     const val CONTACT_TEXT = "contactText"
@@ -64,6 +68,22 @@ object AppRoutes {
     fun articleDetail(id: Int, origin: FavoriteArticleOrigin) = "articleDetail/$id/${origin.name.lowercase()}"
     fun magazineIssue(id: Int) = "magazineIssue/$id"
     fun comments(postId: Int) = "comments/$postId"
+    fun playerMarkers(postId: Int, title: String, subtitle: String?) = buildString {
+        append("playerMarkers/")
+        append(postId)
+        append("/")
+        append(title.encoded())
+        append("/")
+        append(subtitle?.takeUnless { it.isBlank() }?.encoded() ?: NULL_ROUTE_SEGMENT)
+    }
+    fun playerLinks(postId: Int, title: String, subtitle: String?) = buildString {
+        append("playerLinks/")
+        append(postId)
+        append("/")
+        append(title.encoded())
+        append("/")
+        append(subtitle?.takeUnless { it.isBlank() }?.encoded() ?: NULL_ROUTE_SEGMENT)
+    }
     fun player(
         url: String,
         title: String,
@@ -193,6 +213,38 @@ fun TyflocentrumApp(
                 PodcastCommentsScreen(
                     navController = navController,
                     postId = entry.arguments?.getInt("postId") ?: return@composable
+                )
+            }
+            composable(
+                route = AppRoutes.PLAYER_MARKERS,
+                arguments = listOf(
+                    navArgument("postId") { type = NavType.IntType },
+                    navArgument("title") { type = NavType.StringType },
+                    navArgument("subtitle") { type = NavType.StringType }
+                )
+            ) { entry ->
+                PlayerChapterMarkersScreen(
+                    navController = navController,
+                    postId = entry.arguments?.getInt("postId") ?: return@composable,
+                    title = Uri.decode(entry.arguments?.getString("title").orEmpty()),
+                    subtitle = Uri.decode(entry.arguments?.getString("subtitle").orEmpty())
+                        .takeUnless { it == NULL_ROUTE_SEGMENT || it.isBlank() }
+                )
+            }
+            composable(
+                route = AppRoutes.PLAYER_LINKS,
+                arguments = listOf(
+                    navArgument("postId") { type = NavType.IntType },
+                    navArgument("title") { type = NavType.StringType },
+                    navArgument("subtitle") { type = NavType.StringType }
+                )
+            ) { entry ->
+                PlayerRelatedLinksScreen(
+                    navController = navController,
+                    postId = entry.arguments?.getInt("postId") ?: return@composable,
+                    title = Uri.decode(entry.arguments?.getString("title").orEmpty()),
+                    subtitle = Uri.decode(entry.arguments?.getString("subtitle").orEmpty())
+                        .takeUnless { it == NULL_ROUTE_SEGMENT || it.isBlank() }
                 )
             }
             composable(

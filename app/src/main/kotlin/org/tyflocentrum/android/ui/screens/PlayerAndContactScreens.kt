@@ -86,6 +86,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.tyflocentrum.android.core.model.AppSettings
 import org.tyflocentrum.android.core.model.ChapterMarker
+import org.tyflocentrum.android.core.model.Comment
 import org.tyflocentrum.android.core.model.ContactDraft
 import org.tyflocentrum.android.core.model.FavoriteArticleOrigin
 import org.tyflocentrum.android.core.model.FavoriteItem
@@ -93,8 +94,10 @@ import org.tyflocentrum.android.core.model.MagazineParser
 import org.tyflocentrum.android.core.model.PlayerRequest
 import org.tyflocentrum.android.core.model.PlaybackRatePolicy
 import org.tyflocentrum.android.core.model.RelatedLink
+import org.tyflocentrum.android.core.model.ShowNotesData
 import org.tyflocentrum.android.core.model.ShowNotesParser
 import org.tyflocentrum.android.core.model.WpPostDetail
+import org.tyflocentrum.android.core.network.TyfloRepository
 import org.tyflocentrum.android.core.recording.RecorderState
 import org.tyflocentrum.android.core.recording.VoiceRecorderController
 import org.tyflocentrum.android.ui.AppRoutes
@@ -221,12 +224,17 @@ fun PlayerScreen(
 ) {
     val appContainer = LocalAppContainer.current
     val playerState by appContainer.playerController.uiState.collectAsStateWithLifecycle()
-    val favorites by appContainer.preferencesRepository.favoritesFlow.collectAsStateWithLifecycle(emptyList())
     val scope = rememberCoroutineScope()
-    val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
-    var chapterMarkers by remember { mutableStateOf(listOf<ChapterMarker>()) }
-    var relatedLinks by remember { mutableStateOf(listOf<RelatedLink>()) }
+    val cachedComments = remember(postId) { postId?.let(appContainer.repository::peekComments).orEmpty() }
+    val cachedShowNotes = remember(postId) { postId?.let(appContainer.repository::peekShowNotes) }
+    var comments by remember(postId) { mutableStateOf(cachedComments) }
+    var chapterMarkers by remember(postId) { mutableStateOf(cachedShowNotes?.markers.orEmpty()) }
+    var relatedLinks by remember(postId) { mutableStateOf(cachedShowNotes?.links.orEmpty()) }
+    var isShowNotesLoading by remember(postId, isLive) {
+        mutableStateOf(postId != null && !isLive && cachedComments.isEmpty() && cachedShowNotes == null)
+    }
+    var showNotesError by remember(postId) { mutableStateOf<String?>(null) }
 
     val request = remember(url, title, subtitle, isLive, postId, seekMs) {
         PlayerRequest(
@@ -243,19 +251,29 @@ fun PlayerScreen(
         appContainer.playerController.play(request)
     }
 
-    LaunchedEffect(postId) {
+    LaunchedEffect(postId, isLive) {
         if (postId != null && !isLive) {
             runCatching {
-                val comments = appContainer.repository.fetchComments(postId)
-                withContext(Dispatchers.Default) {
-                    ShowNotesParser.parse(comments)
-                }
-            }.onSuccess { (markers, links) ->
-                chapterMarkers = markers
-                relatedLinks = links
+                loadShowNotesData(appContainer.repository, postId)
+            }.onSuccess { (loadedComments, showNotes) ->
+                comments = loadedComments
+                chapterMarkers = showNotes.markers
+                relatedLinks = showNotes.links
+                showNotesError = null
+            }.onFailure {
+                showNotesError = "Nie udało się pobrać dodatków do audycji."
             }
+            isShowNotesLoading = false
+        } else {
+            comments = emptyList()
+            chapterMarkers = emptyList()
+            relatedLinks = emptyList()
+            showNotesError = null
+            isShowNotesLoading = false
         }
     }
+
+    val hasSupplementaryContent = chapterMarkers.isNotEmpty() || relatedLinks.isNotEmpty() || comments.isNotEmpty()
 
     AppScreenScaffold(
         navController = navController,
@@ -371,61 +389,239 @@ fun PlayerScreen(
                 }
             }
 
-            if (!isLive && chapterMarkers.isNotEmpty()) {
-                item {
-                    Text("Znaczniki czasu", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                }
-                items(chapterMarkers, key = { it.id }) { marker ->
-                    val favoriteItem = FavoriteItem.TopicFavorite(
-                        podcastId = postId ?: 0,
-                        podcastTitle = title,
-                        podcastSubtitle = subtitle,
-                        topicTitle = marker.title,
-                        seconds = marker.seconds
-                    )
-                    val isFavorite = favorites.any { it.id == favoriteItem.id }
-                    ContentListItem(
-                        title = marker.title,
-                        date = formatPlaybackTime((marker.seconds * 1000).toLong()),
-                        onOpen = {
-                            appContainer.playerController.seekTo((marker.seconds * 1000).toLong())
-                            appContainer.playerController.resume()
-                        },
-                        favoriteLabel = if (isFavorite) "Usuń z ulubionych" else "Dodaj do ulubionych",
-                        onToggleFavorite = {
-                            scope.launch { appContainer.preferencesRepository.toggleFavorite(favoriteItem) }
-                        }
-                    )
-                }
-            }
+            if (!isLive && postId != null) {
+                if (isShowNotesLoading && !hasSupplementaryContent) {
+                    item {
+                        StatePane(message = "Ładowanie dodatków do audycji…", showLoading = true)
+                    }
+                } else if (hasSupplementaryContent) {
+                    item {
+                        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(16.dp),
+                                verticalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Text("Dodatki do audycji", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
 
-            if (!isLive && relatedLinks.isNotEmpty()) {
-                item {
-                    Text("Odnośniki", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                }
-                items(relatedLinks, key = { it.id }) { link ->
-                    val favoriteItem = FavoriteItem.LinkFavorite(
-                        podcastId = postId ?: 0,
-                        podcastTitle = title,
-                        podcastSubtitle = subtitle,
-                        linkTitle = link.title,
-                        urlString = link.url
-                    )
-                    val isFavorite = favorites.any { it.id == favoriteItem.id }
-                    ContentListItem(
-                        title = link.title,
-                        date = link.url,
-                        leadingContent = { Icon(Icons.Outlined.Link, contentDescription = null) },
-                        onOpen = { openUri(context, link.url) },
-                        onCopyLink = { copyToClipboard(context, link.url) },
-                        favoriteLabel = if (isFavorite) "Usuń z ulubionych" else "Dodaj do ulubionych",
-                        onToggleFavorite = {
-                            scope.launch { appContainer.preferencesRepository.toggleFavorite(favoriteItem) }
+                                if (chapterMarkers.isNotEmpty()) {
+                                    Button(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        onClick = { navController.navigate(AppRoutes.playerMarkers(postId, title, subtitle)) }
+                                    ) {
+                                        Text("Znaczniki czasu: ${chapterMarkers.size}")
+                                    }
+                                }
+
+                                if (relatedLinks.isNotEmpty()) {
+                                    Button(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        onClick = { navController.navigate(AppRoutes.playerLinks(postId, title, subtitle)) }
+                                    ) {
+                                        Text("Odnośniki: ${relatedLinks.size}")
+                                    }
+                                }
+
+                                if (comments.isNotEmpty()) {
+                                    Button(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        onClick = { navController.navigate(AppRoutes.comments(postId)) }
+                                    ) {
+                                        Text("Komentarze: ${comments.size}")
+                                    }
+                                }
+                            }
                         }
-                    )
+                    }
+                } else if (!showNotesError.isNullOrBlank()) {
+                    item {
+                        StatePane(message = showNotesError.orEmpty())
+                    }
                 }
             }
         }
+    }
+}
+
+@Composable
+fun PlayerChapterMarkersScreen(
+    navController: NavHostController,
+    postId: Int,
+    title: String,
+    subtitle: String?
+) {
+    val appContainer = LocalAppContainer.current
+    val favorites by appContainer.preferencesRepository.favoritesFlow.collectAsStateWithLifecycle(emptyList())
+    val scope = rememberCoroutineScope()
+    val cachedShowNotes = remember(postId) { appContainer.repository.peekShowNotes(postId) }
+    var markers by remember(postId) { mutableStateOf(cachedShowNotes?.markers.orEmpty()) }
+    var isLoading by remember(postId) { mutableStateOf(cachedShowNotes == null) }
+    var error by remember(postId) { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(postId) {
+        runCatching {
+            loadShowNotesData(appContainer.repository, postId).second.markers
+        }.onSuccess {
+            markers = it
+            error = null
+        }.onFailure {
+            error = "Nie udało się pobrać znaczników czasu."
+        }
+        isLoading = false
+    }
+
+    AppScreenScaffold(
+        navController = navController,
+        title = "Znaczniki czasu"
+    ) { padding ->
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = detailPadding(padding),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            if (isLoading && markers.isEmpty()) {
+                item { StatePane(message = "Ładowanie znaczników czasu…", showLoading = true) }
+            }
+            if (!error.isNullOrBlank() && markers.isEmpty()) {
+                item { StatePane(message = error.orEmpty()) }
+            }
+            if (!isLoading && error.isNullOrBlank() && markers.isEmpty()) {
+                item { StatePane(message = "Brak znaczników czasu.") }
+            }
+            items(markers, key = { it.id }) { marker ->
+                val favoriteItem = FavoriteItem.TopicFavorite(
+                    podcastId = postId,
+                    podcastTitle = title,
+                    podcastSubtitle = subtitle,
+                    topicTitle = marker.title,
+                    seconds = marker.seconds
+                )
+                val isFavorite = favorites.any { it.id == favoriteItem.id }
+                ContentListItem(
+                    title = marker.title,
+                    date = formatPlaybackTime((marker.seconds * 1000).toLong()),
+                    onOpen = {
+                        appContainer.playerController.seekTo((marker.seconds * 1000).toLong())
+                        appContainer.playerController.resume()
+                        navController.navigateUp()
+                    },
+                    favoriteLabel = if (isFavorite) "Usuń z ulubionych" else "Dodaj do ulubionych",
+                    onToggleFavorite = {
+                        scope.launch { appContainer.preferencesRepository.toggleFavorite(favoriteItem) }
+                    }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun PlayerRelatedLinksScreen(
+    navController: NavHostController,
+    postId: Int,
+    title: String,
+    subtitle: String?
+) {
+    val appContainer = LocalAppContainer.current
+    val favorites by appContainer.preferencesRepository.favoritesFlow.collectAsStateWithLifecycle(emptyList())
+    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    val snackbarHostState = remember { SnackbarHostState() }
+    val cachedShowNotes = remember(postId) { appContainer.repository.peekShowNotes(postId) }
+    var links by remember(postId) { mutableStateOf(cachedShowNotes?.links.orEmpty()) }
+    var isLoading by remember(postId) { mutableStateOf(cachedShowNotes == null) }
+    var error by remember(postId) { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(postId) {
+        runCatching {
+            loadShowNotesData(appContainer.repository, postId).second.links
+        }.onSuccess {
+            links = it
+            error = null
+        }.onFailure {
+            error = "Nie udało się pobrać odnośników."
+        }
+        isLoading = false
+    }
+
+    AppScreenScaffold(
+        navController = navController,
+        title = "Odnośniki",
+        snackbarHostState = snackbarHostState
+    ) { padding ->
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = detailPadding(padding),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            if (isLoading && links.isEmpty()) {
+                item { StatePane(message = "Ładowanie odnośników…", showLoading = true) }
+            }
+            if (!error.isNullOrBlank() && links.isEmpty()) {
+                item { StatePane(message = error.orEmpty()) }
+            }
+            if (!isLoading && error.isNullOrBlank() && links.isEmpty()) {
+                item { StatePane(message = "Brak odnośników.") }
+            }
+            items(links, key = { it.id }) { link ->
+                val favoriteItem = FavoriteItem.LinkFavorite(
+                    podcastId = postId,
+                    podcastTitle = title,
+                    podcastSubtitle = subtitle,
+                    linkTitle = link.title,
+                    urlString = link.url
+                )
+                val isFavorite = favorites.any { it.id == favoriteItem.id }
+                ContentListItem(
+                    title = link.title,
+                    date = "",
+                    supportingText = linkHostLabel(link.url),
+                    leadingContent = { Icon(Icons.Outlined.Link, contentDescription = null) },
+                    onOpen = { openUri(context, link.url) },
+                    onCopyLink = {
+                        copyToClipboard(context, copyableLinkValue(link.url))
+                        scope.launch { snackbarHostState.showSnackbar("Skopiowano link.") }
+                    },
+                    favoriteLabel = if (isFavorite) "Usuń z ulubionych" else "Dodaj do ulubionych",
+                    onToggleFavorite = {
+                        scope.launch { appContainer.preferencesRepository.toggleFavorite(favoriteItem) }
+                    }
+                )
+            }
+        }
+    }
+}
+
+private suspend fun loadShowNotesData(
+    repository: TyfloRepository,
+    postId: Int
+): Pair<List<Comment>, ShowNotesData> {
+    val comments = repository.fetchComments(postId)
+    val cachedShowNotes = repository.peekShowNotes(postId)
+    val showNotes = cachedShowNotes ?: withContext(Dispatchers.Default) {
+        val (markers, links) = ShowNotesParser.parse(comments)
+        ShowNotesData(markers = markers, links = links)
+    }.also {
+        repository.storeShowNotes(postId, it)
+    }
+    return comments to showNotes
+}
+
+private fun linkHostLabel(value: String): String? {
+    val uri = value.toUri()
+    return when {
+        uri.scheme.equals("mailto", ignoreCase = true) -> "E-mail"
+        !uri.host.isNullOrBlank() -> uri.host
+        else -> null
+    }
+}
+
+private fun copyableLinkValue(value: String): String {
+    return if (value.startsWith("mailto:", ignoreCase = true)) {
+        value.removePrefix("mailto:")
+    } else {
+        value
     }
 }
 
