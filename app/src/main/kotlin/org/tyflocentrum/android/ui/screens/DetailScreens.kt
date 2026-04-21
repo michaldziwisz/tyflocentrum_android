@@ -141,7 +141,6 @@ fun PodcastDetailScreen(
             DetailStatePane(padding, error.orEmpty(), false)
         } else if (podcast != null) {
             FullScreenScrollable(modifier = Modifier.padding(detailPadding(padding))) {
-                Text(text = podcast.title.plainText, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
                 Text(text = podcast.formattedDate, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
                 Button(
@@ -272,7 +271,6 @@ fun ArticleDetailScreen(
             DetailStatePane(padding, error.orEmpty(), false)
         } else if (article != null) {
             FullScreenScrollable(modifier = Modifier.padding(detailPadding(padding))) {
-                Text(text = article.title.plainText, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
                 Text(text = article.formattedDate, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
