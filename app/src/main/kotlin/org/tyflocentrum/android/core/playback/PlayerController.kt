@@ -126,6 +126,7 @@ class PlayerController(
                 val startPosition = when {
                     request.isLive -> C.TIME_UNSET
                     request.initialSeekMs != null -> request.initialSeekMs
+                    sameItem -> C.TIME_UNSET
                     else -> preferences.loadResumePosition(request.url)
                 } ?: C.TIME_UNSET
 
