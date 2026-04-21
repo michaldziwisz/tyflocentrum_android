@@ -1,7 +1,10 @@
 package org.tyflocentrum.android.ui.common
 
 import android.content.Intent
+import android.graphics.Typeface
 import android.text.method.LinkMovementMethod
+import android.text.style.URLSpan
+import android.view.View
 import android.widget.TextView
 import androidx.mediarouter.app.MediaRouteButton
 import androidx.compose.foundation.background
@@ -77,6 +80,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.text.HtmlCompat
+import androidx.core.view.ViewCompat
 import androidx.navigation.NavDestination
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavHostController
@@ -84,6 +88,11 @@ import com.google.android.gms.cast.framework.CastButtonFactory
 import org.tyflocentrum.android.core.model.ContentKind
 import org.tyflocentrum.android.core.model.ContentKindLabelPosition
 import org.tyflocentrum.android.core.model.accessibilityTitle
+import org.jsoup.Jsoup
+import org.jsoup.nodes.Element
+import org.jsoup.nodes.Node
+import org.jsoup.nodes.TextNode
+import org.jsoup.safety.Safelist
 
 enum class RootDestination(
     val route: String,
@@ -253,28 +262,22 @@ fun AccessibleHtmlText(
 ) {
     val context = LocalContext.current
     val textColor = MaterialTheme.colorScheme.onSurface.toArgb()
-    val spannedText = remember(html) {
-        HtmlCompat.fromHtml(html, HtmlCompat.FROM_HTML_MODE_COMPACT)
-    }
-    AndroidView(
+    val linkColor = MaterialTheme.colorScheme.primary.toArgb()
+    val blocks = remember(html) { parseAccessibleHtmlBlocks(html) }
+
+    Column(
         modifier = modifier.fillMaxWidth(),
-        factory = {
-            TextView(context).apply {
-                textSize = 18f
-                setTextColor(textColor)
-                setLineSpacing(0f, 1.3f)
-                movementMethod = LinkMovementMethod.getInstance()
-                importantForAccessibility = TextView.IMPORTANT_FOR_ACCESSIBILITY_YES
-                linksClickable = true
-                setPadding(0, 0, 0, 0)
-            }
-        },
-        update = { textView ->
-            if (textView.text != spannedText) {
-                textView.text = spannedText
-            }
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        blocks.forEach { block ->
+            AccessibleHtmlBlockView(
+                block = block,
+                context = context,
+                textColor = textColor,
+                linkColor = linkColor
+            )
         }
-    )
+    }
 }
 
 @Composable
@@ -290,6 +293,287 @@ fun PlainTextScreen(
         )
     }
 }
+
+@Composable
+private fun AccessibleHtmlBlockView(
+    block: AccessibleHtmlBlock,
+    context: android.content.Context,
+    textColor: Int,
+    linkColor: Int
+) {
+    val spannedText = remember(block.html) {
+        HtmlCompat.fromHtml(block.html, HtmlCompat.FROM_HTML_MODE_COMPACT)
+    }
+    val hasLinks = remember(spannedText) {
+        spannedText.getSpans(0, spannedText.length, URLSpan::class.java).isNotEmpty()
+    }
+
+    AndroidView(
+        modifier = Modifier.fillMaxWidth(),
+        factory = {
+            TextView(context).apply {
+                importantForAccessibility = TextView.IMPORTANT_FOR_ACCESSIBILITY_YES
+                setPadding(0, 0, 0, 0)
+                linksClickable = hasLinks
+                movementMethod = if (hasLinks) LinkMovementMethod.getInstance() else null
+            }
+        },
+        update = { textView ->
+            textView.text = spannedText
+            textView.setTextColor(textColor)
+            textView.setLinkTextColor(linkColor)
+            textView.setLineSpacing(0f, 1.3f)
+            textView.textSize = block.textSizeSp
+            textView.typeface = when (block.style) {
+                AccessibleHtmlBlockStyle.HEADING -> Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                AccessibleHtmlBlockStyle.CODE -> Typeface.MONOSPACE
+                else -> Typeface.DEFAULT
+            }
+            textView.linksClickable = hasLinks
+            textView.movementMethod = if (hasLinks) LinkMovementMethod.getInstance() else null
+            textView.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
+            ViewCompat.setAccessibilityHeading(textView, block.style == AccessibleHtmlBlockStyle.HEADING)
+        }
+    )
+}
+
+private data class AccessibleHtmlBlock(
+    val html: String,
+    val style: AccessibleHtmlBlockStyle,
+    val textSizeSp: Float
+)
+
+private enum class AccessibleHtmlBlockStyle {
+    HEADING,
+    BODY,
+    LIST_ITEM,
+    QUOTE,
+    CODE,
+    TABLE_ROW
+}
+
+private val accessibleHtmlSafelist: Safelist = Safelist.relaxed()
+    .addTags("span")
+    .addProtocols("a", "href", "http", "https", "mailto", "tel")
+
+private val htmlContainerTags: Set<String> = setOf(
+    "article",
+    "aside",
+    "body",
+    "div",
+    "figcaption",
+    "figure",
+    "footer",
+    "header",
+    "main",
+    "section"
+)
+
+private fun parseAccessibleHtmlBlocks(html: String): List<AccessibleHtmlBlock> {
+    val document = Jsoup.parseBodyFragment(html)
+    document.outputSettings().prettyPrint(false)
+    val blocks = buildList {
+        document.body().childNodes().forEach { node ->
+            collectAccessibleHtmlBlocks(node, this)
+        }
+    }.filterNot { block ->
+        Jsoup.parseBodyFragment(block.html).text().isBlank()
+    }
+
+    return if (blocks.isNotEmpty()) {
+        blocks
+    } else {
+        val fallbackText = document.body().text().normalizeHtmlWhitespace()
+        if (fallbackText.isBlank()) emptyList() else {
+            listOf(
+                AccessibleHtmlBlock(
+                    html = fallbackText.toEscapedHtml(),
+                    style = AccessibleHtmlBlockStyle.BODY,
+                    textSizeSp = 18f
+                )
+            )
+        }
+    }
+}
+
+private fun collectAccessibleHtmlBlocks(
+    node: Node,
+    blocks: MutableList<AccessibleHtmlBlock>
+) {
+    when (node) {
+        is TextNode -> {
+            val text = node.text().normalizeHtmlWhitespace()
+            if (text.isNotBlank()) {
+                blocks += AccessibleHtmlBlock(
+                    html = text.toEscapedHtml(),
+                    style = AccessibleHtmlBlockStyle.BODY,
+                    textSizeSp = 18f
+                )
+            }
+        }
+        is Element -> {
+            when (node.normalName()) {
+                "script", "style", "noscript", "iframe" -> Unit
+                "h1", "h2", "h3", "h4", "h5", "h6" -> {
+                    blocks += AccessibleHtmlBlock(
+                        html = sanitizeHtmlFragment(node.outerHtml()),
+                        style = AccessibleHtmlBlockStyle.HEADING,
+                        textSizeSp = when (node.normalName()) {
+                            "h1" -> 26f
+                            "h2" -> 24f
+                            "h3" -> 22f
+                            "h4" -> 20f
+                            else -> 18f
+                        }
+                    )
+                }
+                "p" -> addHtmlBlock(
+                    blocks = blocks,
+                    html = node.outerHtml(),
+                    style = AccessibleHtmlBlockStyle.BODY,
+                    textSizeSp = 18f
+                )
+                "blockquote" -> addHtmlBlock(
+                    blocks = blocks,
+                    html = node.outerHtml(),
+                    style = AccessibleHtmlBlockStyle.QUOTE,
+                    textSizeSp = 18f
+                )
+                "pre", "code" -> addHtmlBlock(
+                    blocks = blocks,
+                    html = "<pre>${node.wholeText().toEscapedHtml()}</pre>",
+                    style = AccessibleHtmlBlockStyle.CODE,
+                    textSizeSp = 17f
+                )
+                "ul" -> node.children()
+                    .filter { it.normalName() == "li" }
+                    .forEach { item ->
+                        addHtmlBlock(
+                            blocks = blocks,
+                            html = "<p><strong>•</strong> ${sanitizeHtmlFragment(item.html())}</p>",
+                            style = AccessibleHtmlBlockStyle.LIST_ITEM,
+                            textSizeSp = 18f
+                        )
+                    }
+                "ol" -> node.children()
+                    .filter { it.normalName() == "li" }
+                    .forEachIndexed { index, item ->
+                        addHtmlBlock(
+                            blocks = blocks,
+                            html = "<p><strong>${index + 1}.</strong> ${sanitizeHtmlFragment(item.html())}</p>",
+                            style = AccessibleHtmlBlockStyle.LIST_ITEM,
+                            textSizeSp = 18f
+                        )
+                    }
+                "table" -> {
+                    val caption = node.selectFirst("caption")?.text()?.normalizeHtmlWhitespace()
+                    if (!caption.isNullOrBlank()) {
+                        blocks += AccessibleHtmlBlock(
+                            html = caption.toEscapedHtml(),
+                            style = AccessibleHtmlBlockStyle.HEADING,
+                            textSizeSp = 20f
+                        )
+                    }
+                    node.select("tr").forEach { row ->
+                        val rowText = row.select("th, td")
+                            .map { it.text().normalizeHtmlWhitespace() }
+                            .filter { it.isNotBlank() }
+                            .joinToString(" | ")
+                        if (rowText.isNotBlank()) {
+                            blocks += AccessibleHtmlBlock(
+                                html = rowText.toEscapedHtml(),
+                                style = AccessibleHtmlBlockStyle.TABLE_ROW,
+                                textSizeSp = 18f
+                            )
+                        }
+                    }
+                }
+                "img" -> {
+                    val alt = node.attr("alt").normalizeHtmlWhitespace()
+                    if (alt.isNotBlank()) {
+                        blocks += AccessibleHtmlBlock(
+                            html = "Obraz: $alt".toEscapedHtml(),
+                            style = AccessibleHtmlBlockStyle.BODY,
+                            textSizeSp = 18f
+                        )
+                    }
+                }
+                "hr" -> {
+                    blocks += AccessibleHtmlBlock(
+                        html = "Separator".toEscapedHtml(),
+                        style = AccessibleHtmlBlockStyle.BODY,
+                        textSizeSp = 16f
+                    )
+                }
+                in htmlContainerTags -> {
+                    if (node.children().isEmpty() && node.text().isNotBlank()) {
+                        blocks += AccessibleHtmlBlock(
+                            html = node.text().normalizeHtmlWhitespace().toEscapedHtml(),
+                            style = AccessibleHtmlBlockStyle.BODY,
+                            textSizeSp = 18f
+                        )
+                    } else {
+                        node.childNodes().forEach { child ->
+                            collectAccessibleHtmlBlocks(child, blocks)
+                        }
+                    }
+                }
+                else -> {
+                    if (node.children().isNotEmpty()) {
+                        node.childNodes().forEach { child ->
+                            collectAccessibleHtmlBlocks(child, blocks)
+                        }
+                    } else {
+                        addHtmlBlock(
+                            blocks = blocks,
+                            html = node.outerHtml(),
+                            style = AccessibleHtmlBlockStyle.BODY,
+                            textSizeSp = 18f
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun addHtmlBlock(
+    blocks: MutableList<AccessibleHtmlBlock>,
+    html: String,
+    style: AccessibleHtmlBlockStyle,
+    textSizeSp: Float
+) {
+    val sanitizedHtml = sanitizeHtmlFragment(html)
+    if (Jsoup.parseBodyFragment(sanitizedHtml).text().isBlank()) return
+    blocks += AccessibleHtmlBlock(
+        html = sanitizedHtml,
+        style = style,
+        textSizeSp = textSizeSp
+    )
+}
+
+private fun sanitizeHtmlFragment(html: String): String {
+    val document = Jsoup.parseBodyFragment(html)
+    document.outputSettings().prettyPrint(false)
+    document.select("script,style,noscript,iframe").remove()
+    document.select("img").forEach { image ->
+        val alt = image.attr("alt").normalizeHtmlWhitespace()
+        if (alt.isNotBlank()) {
+            image.replaceWith(TextNode("Obraz: $alt"))
+        } else {
+            image.remove()
+        }
+    }
+    return Jsoup.clean(document.body().html(), accessibleHtmlSafelist).trim()
+}
+
+private fun String.normalizeHtmlWhitespace(): String {
+    return replace('\u00A0', ' ')
+        .replace(Regex("\\s+"), " ")
+        .trim()
+}
+
+private fun String.toEscapedHtml(): String = TextNode(this).outerHtml()
 
 @Composable
 fun ContentListItem(
