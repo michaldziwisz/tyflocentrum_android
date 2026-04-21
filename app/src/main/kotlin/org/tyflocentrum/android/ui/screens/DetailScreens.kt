@@ -51,6 +51,7 @@ import org.tyflocentrum.android.core.model.FavoriteItem
 import org.tyflocentrum.android.core.model.FavoritesFilter
 import org.tyflocentrum.android.core.model.PlaybackRateRememberMode
 import org.tyflocentrum.android.core.model.PushPreferences
+import org.tyflocentrum.android.core.model.toThreadedComments
 import org.tyflocentrum.android.core.model.WpPostDetail
 import org.tyflocentrum.android.ui.AppRoutes
 import org.tyflocentrum.android.ui.LocalAppContainer
@@ -305,6 +306,7 @@ fun PodcastCommentsScreen(
     var comments by remember(postId) { mutableStateOf(cachedComments) }
     var isLoading by remember(postId) { mutableStateOf(cachedComments.isEmpty()) }
     var error by remember { mutableStateOf<String?>(null) }
+    val threadedComments = remember(comments) { comments.toThreadedComments() }
 
     LaunchedEffect(postId) {
         if (comments.isEmpty()) {
@@ -336,9 +338,12 @@ fun PodcastCommentsScreen(
             if (error != null && comments.isEmpty()) {
                 item { StatePane(message = error.orEmpty()) }
             }
-            items(comments, key = { it.id }) { comment ->
+            items(threadedComments, key = { it.comment.id }) { threadedComment ->
+                val comment = threadedComment.comment
                 Card(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = (threadedComment.depth.coerceAtMost(4) * 16).dp),
                     colors = androidx.compose.material3.CardDefaults.cardColors(
                         containerColor = MaterialTheme.colorScheme.surface
                     )
@@ -350,6 +355,20 @@ fun PodcastCommentsScreen(
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         Text(text = comment.authorName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                        if (threadedComment.parentAuthorName != null) {
+                            Text(
+                                text = "Odpowiedź na komentarz: ${threadedComment.parentAuthorName}",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        comment.formattedDate?.let { formattedDate ->
+                            Text(
+                                text = formattedDate,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                         AccessibleHtmlText(html = comment.content.rendered)
                     }
                 }

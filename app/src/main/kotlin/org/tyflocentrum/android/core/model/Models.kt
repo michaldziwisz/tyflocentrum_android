@@ -69,14 +69,29 @@ data class Comment(
     val id: Int,
     val post: Int,
     val parent: Int,
+    val date: String = "",
     @SerialName("author_name") val authorName: String,
     val content: CommentContent
 ) {
+    @Transient
+    private var formattedDateCache: String? = null
+
+    val formattedDate: String?
+        get() = date.takeIf { it.isNotBlank() }?.let {
+            formattedDateCache ?: it.formatWpDate().also { formattedDateCache = it }
+        }
+
     @Serializable
     data class CommentContent(
         val rendered: String
     )
 }
+
+data class ThreadedComment(
+    val comment: Comment,
+    val depth: Int,
+    val parentAuthorName: String? = null
+)
 
 @Serializable
 data class Availability(
@@ -306,4 +321,40 @@ fun ContentKind.accessibilityTitle(title: String, position: ContentKindLabelPosi
         ContentKindLabelPosition.BEFORE -> "$label. $title"
         ContentKindLabelPosition.AFTER -> "$title. $label"
     }
+}
+
+fun List<Comment>.toThreadedComments(): List<ThreadedComment> {
+    if (isEmpty()) return emptyList()
+
+    val commentById = associateBy { it.id }
+    val childrenByParent = groupBy { it.parent }
+    val result = mutableListOf<ThreadedComment>()
+    val comparator = compareBy<Comment>({ it.date.toWpDateOrNull() ?: LocalDateTime.MIN }, { it.id })
+
+    fun appendThread(comment: Comment, depth: Int) {
+        result += ThreadedComment(
+            comment = comment,
+            depth = depth,
+            parentAuthorName = commentById[comment.parent]?.authorName
+        )
+        childrenByParent[comment.id]
+            .orEmpty()
+            .sortedWith(comparator)
+            .forEach { child ->
+                appendThread(child, depth + 1)
+            }
+    }
+
+    this
+        .filter { it.parent == 0 || commentById[it.parent] == null }
+        .sortedWith(comparator)
+        .forEach { root ->
+            appendThread(root, depth = 0)
+        }
+
+    return result
+}
+
+private fun String.toWpDateOrNull(): LocalDateTime? {
+    return runCatching { LocalDateTime.parse(this, wpDateParser) }.getOrNull()
 }
