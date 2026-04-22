@@ -14,6 +14,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
@@ -71,6 +72,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInteropFilter
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -613,21 +615,55 @@ private fun PlaybackRateControls(
     onCycle: () -> Unit,
     onNext: () -> Unit
 ) {
-    FlowRow(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        Button(onClick = onPrevious) {
-            Icon(Icons.Filled.Speed, contentDescription = null)
-            Text("Wolniej", modifier = Modifier.padding(start = 8.dp))
-        }
-        Button(onClick = onCycle) {
-            Text("Prędkość ${PlaybackRatePolicy.format(playbackRate)}x")
-        }
-        Button(onClick = onNext) {
-            Icon(Icons.Filled.Speed, contentDescription = null)
-            Text("Szybciej", modifier = Modifier.padding(start = 8.dp))
+    val fontScale = LocalDensity.current.fontScale
+
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        val useStackedLayout = maxWidth < 420.dp || fontScale > 1.1f
+
+        if (useStackedLayout) {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Button(
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = onPrevious
+                ) {
+                    Icon(Icons.Filled.Speed, contentDescription = null)
+                    Text("Wolniej", modifier = Modifier.padding(start = 8.dp))
+                }
+                Button(
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = onCycle
+                ) {
+                    Text("Prędkość ${PlaybackRatePolicy.format(playbackRate)}x")
+                }
+                Button(
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = onNext
+                ) {
+                    Icon(Icons.Filled.Speed, contentDescription = null)
+                    Text("Szybciej", modifier = Modifier.padding(start = 8.dp))
+                }
+            }
+        } else {
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Button(onClick = onPrevious) {
+                    Icon(Icons.Filled.Speed, contentDescription = null)
+                    Text("Wolniej", modifier = Modifier.padding(start = 8.dp))
+                }
+                Button(onClick = onCycle) {
+                    Text("Prędkość ${PlaybackRatePolicy.format(playbackRate)}x")
+                }
+                Button(onClick = onNext) {
+                    Icon(Icons.Filled.Speed, contentDescription = null)
+                    Text("Szybciej", modifier = Modifier.padding(start = 8.dp))
+                }
+            }
         }
     }
 }
