@@ -965,7 +965,7 @@ fun ContactVoiceMessageScreen(
     val recorderState by recorder.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     val nameFocusRequester = remember { FocusRequester() }
-    val toneGenerator = remember { ToneGenerator(AudioManager.STREAM_NOTIFICATION, 100) }
+    val toneGenerator = remember { ToneGenerator(AudioManager.STREAM_NOTIFICATION, 70) }
     val voicePromptSpeaker = remember { VoicePromptSpeaker(context) }
     var name by rememberSaveable { mutableStateOf("") }
     var didEditName by rememberSaveable { mutableStateOf(false) }
@@ -1002,7 +1002,12 @@ fun ContactVoiceMessageScreen(
         return started
     }
 
-    fun stopCurrentRecording(withHaptic: Boolean = false): Boolean {
+    suspend fun playStartCue() {
+        toneGenerator.startTone(ToneGenerator.TONE_PROP_BEEP2, 220)
+        delay(260)
+    }
+
+    fun stopCurrentRecording(withHaptic: Boolean = true): Boolean {
         cancelPendingAssistedStart()
         val stopped = recorder.stopRecording()
         if (stopped && withHaptic) {
@@ -1031,9 +1036,8 @@ fun ContactVoiceMessageScreen(
                 } else {
                     delay(450)
                 }
-                toneGenerator.startTone(ToneGenerator.TONE_PROP_PROMPT, 320)
-                delay(380)
-                beginRecordingNow()
+                playStartCue()
+                beginRecordingNow(withHaptic = true)
             } finally {
                 assistedStartJob = null
                 isAwaitingCue = false
