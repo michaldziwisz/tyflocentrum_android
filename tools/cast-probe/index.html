@@ -1,0 +1,749 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tyfloradio Stream Probe</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f7f4ed;
+      --panel: #fffdf8;
+      --panel-strong: #f0e5d3;
+      --text: #1f1a12;
+      --muted: #5f5547;
+      --line: #d2c4af;
+      --accent: #0f6c54;
+      --accent-strong: #084c3a;
+      --error: #8f2231;
+      --error-bg: #f9e3e7;
+      --success: #145f2d;
+      --success-bg: #e4f5e8;
+      --warning: #6f4f00;
+      --warning-bg: #f8edcc;
+      --shadow: 0 18px 48px rgba(40, 28, 12, 0.12);
+      --radius: 20px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: "Atkinson Hyperlegible", "Segoe UI", sans-serif;
+      background:
+        radial-gradient(circle at top left, rgba(15, 108, 84, 0.12), transparent 28rem),
+        linear-gradient(180deg, #fcfaf5 0%, var(--bg) 100%);
+      color: var(--text);
+      line-height: 1.55;
+    }
+
+    a {
+      color: var(--accent-strong);
+    }
+
+    a:focus-visible,
+    button:focus-visible,
+    input:focus-visible,
+    summary:focus-visible,
+    audio:focus-visible {
+      outline: 3px solid var(--accent);
+      outline-offset: 3px;
+    }
+
+    .shell {
+      width: min(72rem, calc(100% - 2rem));
+      margin: 0 auto;
+      padding: 1.5rem 0 3rem;
+    }
+
+    header,
+    section,
+    aside {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 1.25rem;
+    }
+
+    header {
+      margin-bottom: 1rem;
+      background:
+        linear-gradient(135deg, rgba(15, 108, 84, 0.1), rgba(240, 229, 211, 0.85)),
+        var(--panel);
+    }
+
+    .intro {
+      color: var(--muted);
+      max-width: 58rem;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr));
+      gap: 1rem;
+      align-items: start;
+    }
+
+    .stack {
+      display: grid;
+      gap: 1rem;
+    }
+
+    h1,
+    h2,
+    h3 {
+      margin: 0 0 0.75rem;
+      line-height: 1.2;
+    }
+
+    h1 {
+      font-size: clamp(2rem, 4vw, 2.8rem);
+    }
+
+    h2 {
+      font-size: 1.45rem;
+    }
+
+    p,
+    ul,
+    ol,
+    pre {
+      margin: 0;
+    }
+
+    .field {
+      display: grid;
+      gap: 0.5rem;
+    }
+
+    label {
+      font-weight: 700;
+    }
+
+    input[type="url"] {
+      width: 100%;
+      padding: 0.9rem 1rem;
+      border-radius: 14px;
+      border: 1px solid var(--line);
+      font: inherit;
+      color: inherit;
+      background: #fff;
+    }
+
+    .button-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+    }
+
+    button {
+      border: 0;
+      border-radius: 999px;
+      padding: 0.85rem 1.1rem;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+      color: #fff;
+      background: var(--accent);
+    }
+
+    button.secondary {
+      color: var(--text);
+      background: var(--panel-strong);
+    }
+
+    button:hover {
+      filter: brightness(0.97);
+    }
+
+    .status {
+      border-radius: 16px;
+      padding: 0.9rem 1rem;
+      border: 1px solid transparent;
+      background: var(--panel-strong);
+    }
+
+    .status[data-tone="success"] {
+      background: var(--success-bg);
+      border-color: #b5dfc0;
+      color: var(--success);
+    }
+
+    .status[data-tone="error"] {
+      background: var(--error-bg);
+      border-color: #e5b2bb;
+      color: var(--error);
+    }
+
+    .status[data-tone="warning"] {
+      background: var(--warning-bg);
+      border-color: #e2d098;
+      color: var(--warning);
+    }
+
+    .audio-shell {
+      display: grid;
+      gap: 0.75rem;
+      padding: 1rem;
+      border-radius: 18px;
+      background: #fff;
+      border: 1px solid var(--line);
+    }
+
+    audio {
+      width: 100%;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    caption {
+      text-align: left;
+      font-weight: 700;
+      margin-bottom: 0.75rem;
+    }
+
+    th,
+    td {
+      border-top: 1px solid var(--line);
+      padding: 0.75rem 0.6rem;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      font-size: 0.95rem;
+    }
+
+    td[data-state="ok"] {
+      color: var(--success);
+      font-weight: 700;
+    }
+
+    td[data-state="error"] {
+      color: var(--error);
+      font-weight: 700;
+    }
+
+    .log {
+      min-height: 18rem;
+      max-height: 28rem;
+      overflow: auto;
+      padding: 1rem;
+      border-radius: 18px;
+      background: #1d1a17;
+      color: #f5eedd;
+      border: 1px solid #3c3225;
+      font-family: "Cascadia Code", "SFMono-Regular", monospace;
+      font-size: 0.95rem;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .subtle {
+      color: var(--muted);
+      font-size: 0.95rem;
+    }
+
+    .steps {
+      padding-left: 1.3rem;
+    }
+
+    .warning-box {
+      margin-top: 1rem;
+    }
+
+    @media (max-width: 720px) {
+      .shell {
+        width: min(100% - 1rem, 72rem);
+        padding-top: 0.75rem;
+      }
+
+      header,
+      section,
+      aside {
+        padding: 1rem;
+      }
+
+      .button-row {
+        display: grid;
+      }
+
+      button {
+        width: 100%;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header>
+      <h1>Tyfloradio Stream Probe</h1>
+      <p class="intro">
+        Ta strona pomaga sprawdzić zachowanie strumienia Tyfloradia w warunkach bliższych webowemu receiverowi:
+        odtwarzanie MP3 i HLS, log zdarzeń audio oraz testy sieciowe dla <code>HEAD</code>, <code>GET</code> i playlisty HLS.
+      </p>
+      <div id="protocol-warning" class="status warning-box" data-tone="warning" hidden>
+        Otworzyłeś tę stronę przez <code>file://</code>. To zafałszuje testy sieciowe i CORS.
+        Uruchom ją z lokalnego serwera HTTP, np. <code>python3 -m http.server 8123 --directory tools/cast-probe</code>.
+      </div>
+    </header>
+
+    <div class="grid">
+      <section class="stack" aria-labelledby="controls-title">
+        <div>
+          <h2 id="controls-title">Test odtwarzania</h2>
+          <p class="subtle">Najpierw sprawdź, czy oba warianty strumienia startują, zatrzymują się albo zrywają.</p>
+        </div>
+
+        <div class="field">
+          <label for="mp3-url">Adres MP3</label>
+          <input id="mp3-url" type="url" spellcheck="false" value="https://radio.tyflopodcast.net/">
+        </div>
+
+        <div class="field">
+          <label for="hls-url">Adres HLS</label>
+          <input id="hls-url" type="url" spellcheck="false" value="https://radio.tyflopodcast.net/hls/stream.m3u8">
+        </div>
+
+        <div class="button-row" aria-label="Akcje odtwarzania">
+          <button id="play-mp3" type="button">Odtwórz MP3</button>
+          <button id="play-hls" type="button">Odtwórz HLS</button>
+          <button id="stop-playback" type="button" class="secondary">Zatrzymaj</button>
+          <button id="clear-log" type="button" class="secondary">Wyczyść log</button>
+        </div>
+
+        <div id="status" class="status" role="status" aria-live="polite" aria-atomic="true" data-tone="warning">
+          Strona gotowa. Wybierz tryb odtwarzania albo uruchom diagnostykę sieciową.
+        </div>
+
+        <div class="audio-shell">
+          <label for="audio-player">Odtwarzacz testowy</label>
+          <audio id="audio-player" controls preload="none" aria-describedby="audio-help"></audio>
+          <p id="audio-help" class="subtle">
+            Jeśli przeglądarka zablokuje autoplay, kliknij ponownie <code>Play</code> w kontrolkach audio.
+          </p>
+        </div>
+      </section>
+
+      <aside class="stack" aria-labelledby="guide-title">
+        <div>
+          <h2 id="guide-title">Jak czytać wyniki</h2>
+          <ol class="steps">
+            <li>Jeśli MP3 gra, a HLS nie, problem może być po stronie playlisty HLS albo segmentów.</li>
+            <li>Jeśli test <code>HEAD</code> kończy się błędem, receiver może mieć problem już na etapie sondowania.</li>
+            <li>Jeśli <code>GET</code> działa, ale HLS playlist/segmenty wpadają w błąd CORS, receiver webowy prawdopodobnie też polegnie.</li>
+            <li>Jeśli wszystko wygląda dobrze tutaj, a Cast dalej nie działa, problem jest bardziej po stronie sesji Cast niż samego streamu.</li>
+          </ol>
+        </div>
+
+        <div class="button-row" aria-label="Akcje diagnostyki">
+          <button id="run-diagnostics" type="button">Uruchom diagnostykę sieciową</button>
+        </div>
+      </aside>
+    </div>
+
+    <section class="stack" aria-labelledby="diagnostics-title" style="margin-top: 1rem;">
+      <div>
+        <h2 id="diagnostics-title">Wyniki diagnostyki</h2>
+        <p class="subtle">Tabela pokazuje, jak strumień odpowiada na podstawowe zapytania, które są istotne dla receiverów webowych.</p>
+      </div>
+      <div style="overflow:auto;">
+        <table>
+          <caption>Testy sieciowe dla aktualnych adresów strumienia</caption>
+          <thead>
+            <tr>
+              <th scope="col">Test</th>
+              <th scope="col">Metoda</th>
+              <th scope="col">Status</th>
+              <th scope="col">Content-Type</th>
+              <th scope="col">Uwagi</th>
+            </tr>
+          </thead>
+          <tbody id="diagnostics-body">
+            <tr>
+              <td colspan="5">Brak danych. Kliknij „Uruchom diagnostykę sieciową”.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="stack" aria-labelledby="log-title" style="margin-top: 1rem;">
+      <div>
+        <h2 id="log-title">Log zdarzeń</h2>
+        <p class="subtle">Tu pojawiają się zdarzenia odtwarzacza, HLS i wyniki diagnostyki sieciowej.</p>
+      </div>
+      <pre id="event-log" class="log" tabindex="0" aria-label="Log zdarzeń odtwarzania i diagnostyki">[start] Gotowe.</pre>
+    </section>
+  </main>
+
+  <script>
+    const mp3UrlInput = document.getElementById('mp3-url');
+    const hlsUrlInput = document.getElementById('hls-url');
+    const audio = document.getElementById('audio-player');
+    const statusNode = document.getElementById('status');
+    const logNode = document.getElementById('event-log');
+    const diagnosticsBody = document.getElementById('diagnostics-body');
+    const protocolWarning = document.getElementById('protocol-warning');
+
+    let hlsInstance = null;
+    let hlsConstructorPromise = null;
+
+    if (window.location.protocol === 'file:') {
+      protocolWarning.hidden = false;
+    }
+
+    function timestamp() {
+      return new Date().toLocaleTimeString('pl-PL', { hour12: false });
+    }
+
+    function appendLog(message) {
+      logNode.textContent += `\n[${timestamp()}] ${message}`;
+      logNode.scrollTop = logNode.scrollHeight;
+    }
+
+    function setStatus(message, tone = 'warning') {
+      statusNode.textContent = message;
+      statusNode.dataset.tone = tone;
+      appendLog(`status: ${message}`);
+    }
+
+    function formatError(error) {
+      return error && error.message ? error.message : String(error);
+    }
+
+    function clearLog() {
+      logNode.textContent = '[start] Log wyczyszczony.';
+      setStatus('Log wyczyszczony.', 'success');
+    }
+
+    function destroyHls() {
+      if (hlsInstance) {
+        appendLog('HLS: destroy');
+        hlsInstance.destroy();
+        hlsInstance = null;
+      }
+    }
+
+    function stopPlayback() {
+      destroyHls();
+      audio.pause();
+      audio.removeAttribute('src');
+      audio.load();
+      setStatus('Odtwarzanie zatrzymane.', 'warning');
+    }
+
+    async function ensureHlsLibrary() {
+      if (window.Hls) {
+        return window.Hls;
+      }
+      if (!hlsConstructorPromise) {
+        hlsConstructorPromise = new Promise((resolve, reject) => {
+          const script = document.createElement('script');
+          script.src = 'https://cdn.jsdelivr.net/npm/hls.js@1/dist/hls.min.js';
+          script.async = true;
+          script.onload = () => resolve(window.Hls);
+          script.onerror = () => reject(new Error('Nie udało się załadować biblioteki hls.js z CDN.'));
+          document.head.appendChild(script);
+        });
+      }
+      return hlsConstructorPromise;
+    }
+
+    async function tryPlay() {
+      try {
+        await audio.play();
+        setStatus('Odtwarzanie wystartowało.', 'success');
+      } catch (error) {
+        setStatus(`Przeglądarka zablokowała autoplay: ${formatError(error)}`, 'warning');
+      }
+    }
+
+    async function playMp3() {
+      const url = mp3UrlInput.value.trim();
+      if (!url) {
+        setStatus('Wpisz adres MP3.', 'error');
+        return;
+      }
+
+      destroyHls();
+      audio.src = url;
+      audio.load();
+      appendLog(`MP3: ustawiono źródło ${url}`);
+      setStatus('Próba odtworzenia MP3…', 'warning');
+      await tryPlay();
+    }
+
+    async function playHls() {
+      const url = hlsUrlInput.value.trim();
+      if (!url) {
+        setStatus('Wpisz adres HLS.', 'error');
+        return;
+      }
+
+      destroyHls();
+      setStatus('Próba odtworzenia HLS…', 'warning');
+
+      if (audio.canPlayType('application/vnd.apple.mpegurl')) {
+        audio.src = url;
+        audio.load();
+        appendLog(`HLS: natywne źródło ${url}`);
+        await tryPlay();
+        return;
+      }
+
+      let Hls;
+      try {
+        Hls = await ensureHlsLibrary();
+      } catch (error) {
+        setStatus(formatError(error), 'error');
+        return;
+      }
+
+      if (!Hls || !Hls.isSupported()) {
+        setStatus('Ta przeglądarka nie obsługuje HLS ani natywnie, ani przez hls.js.', 'error');
+        return;
+      }
+
+      hlsInstance = new Hls({
+        enableWorker: true,
+        lowLatencyMode: false
+      });
+
+      hlsInstance.on(Hls.Events.MANIFEST_LOADING, (_, data) => {
+        appendLog(`HLS manifest loading: ${data.url}`);
+      });
+
+      hlsInstance.on(Hls.Events.MANIFEST_PARSED, (_, data) => {
+        appendLog(`HLS manifest parsed: levels=${data.levels.length}`);
+      });
+
+      hlsInstance.on(Hls.Events.LEVEL_LOADED, (_, data) => {
+        appendLog(`HLS level loaded: fragments=${data.details.fragments.length}`);
+      });
+
+      hlsInstance.on(Hls.Events.ERROR, (_, data) => {
+        appendLog(`HLS error: type=${data.type}, details=${data.details}, fatal=${data.fatal}`);
+        if (data.fatal) {
+          setStatus(`HLS zgłosił błąd krytyczny: ${data.details}`, 'error');
+        }
+      });
+
+      hlsInstance.attachMedia(audio);
+      hlsInstance.on(Hls.Events.MEDIA_ATTACHED, () => {
+        appendLog('HLS media attached');
+        hlsInstance.loadSource(url);
+      });
+
+      await tryPlay();
+    }
+
+    function describeMediaError(error) {
+      if (!error) {
+        return 'brak dodatkowych informacji';
+      }
+      switch (error.code) {
+        case MediaError.MEDIA_ERR_ABORTED:
+          return 'MEDIA_ERR_ABORTED';
+        case MediaError.MEDIA_ERR_NETWORK:
+          return 'MEDIA_ERR_NETWORK';
+        case MediaError.MEDIA_ERR_DECODE:
+          return 'MEDIA_ERR_DECODE';
+        case MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED:
+          return 'MEDIA_ERR_SRC_NOT_SUPPORTED';
+        default:
+          return `MEDIA_ERR_${error.code}`;
+      }
+    }
+
+    [
+      'loadstart',
+      'loadedmetadata',
+      'loadeddata',
+      'canplay',
+      'canplaythrough',
+      'play',
+      'playing',
+      'pause',
+      'waiting',
+      'stalled',
+      'suspend',
+      'seeking',
+      'seeked',
+      'ended',
+      'error'
+    ].forEach((eventName) => {
+      audio.addEventListener(eventName, () => {
+        if (eventName === 'error') {
+          appendLog(`audio event: error (${describeMediaError(audio.error)})`);
+          return;
+        }
+        appendLog(
+          `audio event: ${eventName}, readyState=${audio.readyState}, networkState=${audio.networkState}`
+        );
+      });
+    });
+
+    function escapeHtml(value) {
+      return value
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;');
+    }
+
+    function setDiagnosticsRows(rows) {
+      diagnosticsBody.innerHTML = rows.map((row) => {
+        const state = row.ok ? 'ok' : 'error';
+        const status = row.error ? escapeHtml(row.error) : `${row.status}`;
+        return `
+          <tr>
+            <td>${escapeHtml(row.label)}</td>
+            <td>${escapeHtml(row.method)}</td>
+            <td data-state="${state}">${status}</td>
+            <td>${escapeHtml(row.contentType || '—')}</td>
+            <td>${escapeHtml(row.note || '—')}</td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    async function fetchProbe(label, url, init = {}) {
+      const method = init.method || 'GET';
+      appendLog(`probe ${label}: ${method} ${url}`);
+
+      try {
+        const response = await fetch(url, {
+          cache: 'no-store',
+          mode: 'cors',
+          redirect: 'follow',
+          ...init
+        });
+
+        if (response.body && method !== 'HEAD') {
+          try {
+            await response.body.cancel();
+          } catch (cancelError) {
+            appendLog(`probe ${label}: cancel body failed (${formatError(cancelError)})`);
+          }
+        }
+
+        const noteParts = [];
+        const acceptRanges = response.headers.get('accept-ranges');
+        if (acceptRanges) {
+          noteParts.push(`accept-ranges=${acceptRanges}`);
+        }
+        const allowOrigin = response.headers.get('access-control-allow-origin');
+        if (allowOrigin) {
+          noteParts.push(`acao=${allowOrigin}`);
+        }
+
+        return {
+          label,
+          method,
+          ok: response.ok,
+          status: response.status,
+          contentType: response.headers.get('content-type') || '—',
+          note: noteParts.join(', ') || 'brak dodatkowych nagłówków'
+        };
+      } catch (error) {
+        return {
+          label,
+          method,
+          ok: false,
+          status: 0,
+          contentType: '—',
+          error: formatError(error),
+          note: 'błąd fetch lub CORS'
+        };
+      }
+    }
+
+    async function probeFirstHlsSegment(hlsUrl) {
+      appendLog(`probe HLS playlist body: GET ${hlsUrl}`);
+
+      try {
+        const response = await fetch(hlsUrl, {
+          cache: 'no-store',
+          mode: 'cors',
+          redirect: 'follow'
+        });
+        const playlistText = await response.text();
+        const segmentLine = playlistText
+          .split(/\r?\n/)
+          .map((line) => line.trim())
+          .find((line) => line && !line.startsWith('#'));
+
+        if (!segmentLine) {
+          return {
+            label: 'HLS pierwszy segment',
+            method: 'GET',
+            ok: false,
+            status: response.status,
+            contentType: response.headers.get('content-type') || '—',
+            note: 'playlista nie zawiera segmentów'
+          };
+        }
+
+        const segmentUrl = new URL(segmentLine, hlsUrl).href;
+        return await fetchProbe('HLS pierwszy segment', segmentUrl, { method: 'HEAD' });
+      } catch (error) {
+        return {
+          label: 'HLS pierwszy segment',
+          method: 'HEAD',
+          ok: false,
+          status: 0,
+          contentType: '—',
+          error: formatError(error),
+          note: 'nie udało się pobrać playlisty HLS'
+        };
+      }
+    }
+
+    async function runDiagnostics() {
+      const mp3Url = mp3UrlInput.value.trim();
+      const hlsUrl = hlsUrlInput.value.trim();
+
+      if (!mp3Url || !hlsUrl) {
+        setStatus('Uzupełnij oba adresy przed diagnostyką.', 'error');
+        return;
+      }
+
+      setStatus('Trwa diagnostyka sieciowa…', 'warning');
+      diagnosticsBody.innerHTML = '<tr><td colspan="5">Trwa diagnostyka…</td></tr>';
+
+      const rows = [];
+      rows.push(await fetchProbe('MP3 HEAD', mp3Url, { method: 'HEAD' }));
+      rows.push(await fetchProbe('MP3 GET', mp3Url, { method: 'GET' }));
+      rows.push(await fetchProbe('MP3 GET Range', mp3Url, {
+        method: 'GET',
+        headers: { Range: 'bytes=0-1023' }
+      }));
+      rows.push(await fetchProbe('HLS HEAD', hlsUrl, { method: 'HEAD' }));
+      rows.push(await fetchProbe('HLS GET', hlsUrl, { method: 'GET' }));
+      rows.push(await probeFirstHlsSegment(hlsUrl));
+
+      setDiagnosticsRows(rows);
+
+      const hasErrors = rows.some((row) => !row.ok);
+      setStatus(
+        hasErrors
+          ? 'Diagnostyka zakończona z błędami. Sprawdź tabelę i log zdarzeń.'
+          : 'Diagnostyka zakończona bez oczywistych błędów HTTP/CORS.',
+        hasErrors ? 'warning' : 'success'
+      );
+    }
+
+    document.getElementById('play-mp3').addEventListener('click', playMp3);
+    document.getElementById('play-hls').addEventListener('click', playHls);
+    document.getElementById('stop-playback').addEventListener('click', stopPlayback);
+    document.getElementById('clear-log').addEventListener('click', clearLog);
+    document.getElementById('run-diagnostics').addEventListener('click', runDiagnostics);
+  </script>
+</body>
+</html>
