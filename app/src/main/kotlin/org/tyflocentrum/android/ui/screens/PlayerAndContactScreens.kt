@@ -6,10 +6,12 @@ import android.content.Intent
 import android.media.AudioManager
 import android.media.ToneGenerator
 import android.os.Build
+import android.os.Bundle
+import android.speech.tts.TextToSpeech
+import android.speech.tts.UtteranceProgressListener
 import android.view.HapticFeedbackConstants
 import android.view.KeyEvent
 import android.view.MotionEvent
-import android.view.accessibility.AccessibilityManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -85,10 +87,12 @@ import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import org.tyflocentrum.android.core.model.AppSettings
 import org.tyflocentrum.android.core.model.ChapterMarker
@@ -109,13 +113,16 @@ import org.tyflocentrum.android.core.recording.VoiceRecorderController
 import org.tyflocentrum.android.ui.AppRoutes
 import org.tyflocentrum.android.ui.LocalAppContainer
 import org.tyflocentrum.android.ui.common.AccessibleHtmlText
-import org.tyflocentrum.android.ui.common.Announcement
 import org.tyflocentrum.android.ui.common.AppScreenScaffold
 import org.tyflocentrum.android.ui.common.CastRouteButton
 import org.tyflocentrum.android.ui.common.ContentListItem
 import org.tyflocentrum.android.ui.common.FullScreenScrollable
 import org.tyflocentrum.android.ui.common.LinkifiedPlainText
 import org.tyflocentrum.android.ui.common.StatePane
+import java.util.Locale
+import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
+import kotlin.coroutines.resume
 
 private const val RADIO_STREAM_URL = "https://radio.tyflopodcast.net/hls/stream.m3u8"
 
@@ -952,6 +959,7 @@ fun ContactVoiceMessageScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val nameFocusRequester = remember { FocusRequester() }
     val toneGenerator = remember { ToneGenerator(AudioManager.STREAM_NOTIFICATION, 100) }
+    val voicePromptSpeaker = remember { VoicePromptSpeaker(context) }
     var name by rememberSaveable { mutableStateOf("") }
     var didEditName by rememberSaveable { mutableStateOf(false) }
     var isSending by remember { mutableStateOf(false) }
@@ -962,10 +970,6 @@ fun ContactVoiceMessageScreen(
     var nameError by remember { mutableStateOf<String?>(null) }
     var formMessage by remember { mutableStateOf<String?>(null) }
     var isAwaitingCue by remember { mutableStateOf(false) }
-    var accessibilityAnnouncement by remember { mutableStateOf<String?>(null) }
-    val accessibilityManager = remember {
-        context.getSystemService(Context.ACCESSIBILITY_SERVICE) as AccessibilityManager
-    }
 
     fun performStartHaptic() {
         view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
@@ -979,7 +983,7 @@ fun ContactVoiceMessageScreen(
         assistedStartJob?.cancel()
         assistedStartJob = null
         isAwaitingCue = false
-        accessibilityAnnouncement = null
+        voicePromptSpeaker.stop()
     }
 
     fun beginRecordingNow(withHaptic: Boolean = false): Boolean {
@@ -1006,20 +1010,22 @@ fun ContactVoiceMessageScreen(
         holdStartJob?.cancel()
         holdStartJob = null
         formMessage = null
-        accessibilityAnnouncement = "Mów po sygnale"
         isAwaitingCue = true
         appContainer.playerController.pause()
         assistedStartJob = scope.launch {
             try {
-                val cueDelayMs = if (accessibilityManager.isEnabled) 1400L else 500L
-                delay(cueDelayMs)
-                toneGenerator.startTone(ToneGenerator.TONE_PROP_PROMPT, 350)
+                val promptPlayed = voicePromptSpeaker.speak("Mów po sygnale")
+                if (promptPlayed) {
+                    delay(120)
+                } else {
+                    delay(250)
+                }
+                toneGenerator.startTone(ToneGenerator.TONE_PROP_PROMPT, 320)
                 delay(380)
                 beginRecordingNow()
             } finally {
                 assistedStartJob = null
                 isAwaitingCue = false
-                accessibilityAnnouncement = null
             }
         }
     }
@@ -1064,6 +1070,7 @@ fun ContactVoiceMessageScreen(
             holdStartJob?.cancel()
             cancelPendingAssistedStart()
             runCatching { toneGenerator.release() }
+            voicePromptSpeaker.shutdown()
             recorder.reset()
         }
     }
@@ -1097,8 +1104,6 @@ fun ContactVoiceMessageScreen(
             recorder.clearError()
         }
     }
-
-    Announcement(accessibilityAnnouncement)
 
     AppScreenScaffold(
         navController = navController,
@@ -1290,6 +1295,85 @@ fun ContactVoiceMessageScreen(
                 }
             }
         }
+    }
+}
+
+private class VoicePromptSpeaker(context: Context) {
+    private val appContext = context.applicationContext
+    private val initResult = CompletableDeferred<Boolean>()
+    private val pendingUtterances = ConcurrentHashMap<String, kotlinx.coroutines.CancellableContinuation<Boolean>>()
+    private var textToSpeech: TextToSpeech? = null
+
+    init {
+        textToSpeech = TextToSpeech(appContext) { status ->
+            val tts = textToSpeech
+            if (status != TextToSpeech.SUCCESS || tts == null) {
+                initResult.complete(false)
+                return@TextToSpeech
+            }
+            runCatching {
+                tts.language = Locale("pl", "PL")
+                tts.setSpeechRate(1f)
+                tts.setOnUtteranceProgressListener(
+                    object : UtteranceProgressListener() {
+                        override fun onStart(utteranceId: String?) = Unit
+
+                        override fun onDone(utteranceId: String?) {
+                            utteranceId?.let { completeUtterance(it, true) }
+                        }
+
+                        @Deprecated("Deprecated in Java")
+                        override fun onError(utteranceId: String?) {
+                            utteranceId?.let { completeUtterance(it, false) }
+                        }
+
+                        override fun onError(utteranceId: String?, errorCode: Int) {
+                            utteranceId?.let { completeUtterance(it, false) }
+                        }
+                    }
+                )
+            }
+            initResult.complete(true)
+        }
+    }
+
+    suspend fun speak(text: String): Boolean {
+        if (!initResult.await()) return false
+        val tts = textToSpeech ?: return false
+        return suspendCancellableCoroutine { continuation ->
+            val utteranceId = UUID.randomUUID().toString()
+            pendingUtterances[utteranceId] = continuation
+            val result = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                tts.speak(text, TextToSpeech.QUEUE_FLUSH, Bundle(), utteranceId)
+            } else {
+                @Suppress("DEPRECATION")
+                tts.speak(text, TextToSpeech.QUEUE_FLUSH, null)
+            }
+            if (result == TextToSpeech.ERROR) {
+                pendingUtterances.remove(utteranceId)
+                continuation.resume(false)
+            } else {
+                continuation.invokeOnCancellation {
+                    pendingUtterances.remove(utteranceId)
+                    runCatching { tts.stop() }
+                }
+            }
+        }
+    }
+
+    fun stop() {
+        pendingUtterances.keys.toList().forEach { completeUtterance(it, false) }
+        runCatching { textToSpeech?.stop() }
+    }
+
+    fun shutdown() {
+        stop()
+        runCatching { textToSpeech?.shutdown() }
+        textToSpeech = null
+    }
+
+    private fun completeUtterance(utteranceId: String, result: Boolean) {
+        pendingUtterances.remove(utteranceId)?.resume(result)
     }
 }
 
