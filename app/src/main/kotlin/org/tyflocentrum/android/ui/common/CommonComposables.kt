@@ -32,6 +32,8 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.Article
@@ -58,6 +60,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -81,13 +84,17 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.text.HtmlCompat
 import androidx.core.view.ViewCompat
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavDestination
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavHostController
 import com.google.android.gms.cast.framework.CastButtonFactory
 import org.tyflocentrum.android.core.model.ContentKind
 import org.tyflocentrum.android.core.model.ContentKindLabelPosition
+import org.tyflocentrum.android.core.model.PlayerRequest
 import org.tyflocentrum.android.core.model.accessibilityTitle
+import org.tyflocentrum.android.ui.AppRoutes
+import org.tyflocentrum.android.ui.LocalAppContainer
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Element
 import org.jsoup.nodes.Node
@@ -131,9 +138,14 @@ fun AppScreenScaffold(
     title: String,
     rootDestination: RootDestination? = null,
     snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
+    showMiniPlayer: Boolean = true,
     actions: @Composable () -> Unit = {},
     content: @Composable (PaddingValues) -> Unit
 ) {
+    val appContainer = LocalAppContainer.current
+    val playerState by appContainer.playerController.uiState.collectAsStateWithLifecycle()
+    val currentPlayer = playerState.current.takeIf { showMiniPlayer }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -176,28 +188,44 @@ fun AppScreenScaffold(
             )
         },
         bottomBar = {
-            if (rootDestination != null) {
-                NavigationBar {
-                    RootDestination.entries.forEach { destination ->
-                        NavigationBarItem(
-                            selected = rootDestination == destination,
-                            onClick = {
-                                navController.navigate(destination.route) {
-                                    popUpTo(navController.graph.startDestinationId) {
-                                        saveState = true
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (currentPlayer != null) {
+                    MiniPlayerBar(
+                        request = currentPlayer,
+                        isPlaying = playerState.isPlaying,
+                        isRemotePlayback = playerState.isRemotePlayback,
+                        elapsedMs = playerState.elapsedMs,
+                        onTogglePlayback = { appContainer.playerController.togglePlayPause(currentPlayer) },
+                        onOpenPlayer = {
+                            navController.navigate(currentPlayer.asPlayerRoute(playerState.elapsedMs)) {
+                                launchSingleTop = true
+                            }
+                        }
+                    )
+                }
+                if (rootDestination != null) {
+                    NavigationBar {
+                        RootDestination.entries.forEach { destination ->
+                            NavigationBarItem(
+                                selected = rootDestination == destination,
+                                onClick = {
+                                    navController.navigate(destination.route) {
+                                        popUpTo(navController.graph.startDestinationId) {
+                                            saveState = true
+                                        }
+                                        launchSingleTop = true
+                                        restoreState = true
                                     }
-                                    launchSingleTop = true
-                                    restoreState = true
-                                }
-                            },
-                            icon = {
-                                Icon(
-                                    imageVector = destination.icon,
-                                    contentDescription = null
-                                )
-                            },
-                            label = { Text(destination.label) }
-                        )
+                                },
+                                icon = {
+                                    Icon(
+                                        imageVector = destination.icon,
+                                        contentDescription = null
+                                    )
+                                },
+                                label = { Text(destination.label) }
+                            )
+                        }
                     }
                 }
             }
@@ -250,6 +278,60 @@ fun StatePane(
                 Button(onClick = onRetry) {
                     Text(retryLabel)
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MiniPlayerBar(
+    request: PlayerRequest,
+    isPlaying: Boolean,
+    isRemotePlayback: Boolean,
+    elapsedMs: Long,
+    onTogglePlayback: () -> Unit,
+    onOpenPlayer: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                Text(
+                    text = request.title,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1
+                )
+                Text(
+                    text = request.miniPlayerStatus(elapsedMs, isRemotePlayback),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1
+                )
+            }
+            TextButton(onClick = onOpenPlayer) {
+                Text("Otwórz")
+            }
+            IconButton(onClick = onTogglePlayback) {
+                Icon(
+                    imageVector = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                    contentDescription = if (isPlaying) "Pauza" else "Odtwarzaj"
+                )
             }
         }
     }
@@ -805,6 +887,40 @@ fun FullScreenScrollable(
         verticalArrangement = Arrangement.spacedBy(16.dp),
         content = content
     )
+}
+
+private fun PlayerRequest.asPlayerRoute(elapsedMs: Long): String {
+    return AppRoutes.player(
+        url = url,
+        title = title,
+        subtitle = subtitle,
+        live = isLive,
+        postId = podcastPostId,
+        seekMs = elapsedMs.takeIf { !isLive && it > 0 }
+    )
+}
+
+private fun PlayerRequest.miniPlayerStatus(elapsedMs: Long, isRemotePlayback: Boolean): String {
+    val parts = buildList {
+        add(if (isLive) "Na żywo" else formatMiniPlayerTime(elapsedMs))
+        subtitle?.takeIf { it.isNotBlank() }?.let { add(it) }
+        if (isRemotePlayback) {
+            add("Cast")
+        }
+    }
+    return parts.joinToString(" • ")
+}
+
+private fun formatMiniPlayerTime(valueMs: Long): String {
+    val totalSeconds = (valueMs / 1000).coerceAtLeast(0)
+    val hours = totalSeconds / 3600
+    val minutes = (totalSeconds % 3600) / 60
+    val seconds = totalSeconds % 60
+    return if (hours > 0) {
+        "%d:%02d:%02d".format(hours, minutes, seconds)
+    } else {
+        "%02d:%02d".format(minutes, seconds)
+    }
 }
 
 @Composable

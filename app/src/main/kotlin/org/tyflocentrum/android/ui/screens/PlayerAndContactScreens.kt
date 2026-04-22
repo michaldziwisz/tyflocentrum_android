@@ -11,9 +11,11 @@ import android.view.MotionEvent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -147,66 +149,74 @@ fun RadioHomeScreen(
             CastRouteButton()
         }
     ) { padding ->
-        Column(
+        LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(detailPadding(padding)),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Button(
-                modifier = Modifier.fillMaxWidth(),
-                onClick = {
-                    navController.navigate(
-                        AppRoutes.player(
-                            url = RADIO_STREAM_URL,
-                            title = "Tyfloradio",
-                            subtitle = null,
-                            live = true,
-                            postId = null
+            item {
+                Button(
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = {
+                        navController.navigate(
+                            AppRoutes.player(
+                                url = RADIO_STREAM_URL,
+                                title = "Tyfloradio",
+                                subtitle = null,
+                                live = true,
+                                postId = null
+                            )
                         )
-                    )
+                    }
+                ) {
+                    Icon(Icons.Outlined.Radio, contentDescription = null)
+                    Text("Posłuchaj Tyfloradia", modifier = Modifier.padding(start = 8.dp))
                 }
-            ) {
-                Icon(Icons.Outlined.Radio, contentDescription = null)
-                Text("Posłuchaj Tyfloradia", modifier = Modifier.padding(start = 8.dp))
             }
-            Button(modifier = Modifier.fillMaxWidth(), onClick = { loadSchedule() }) {
-                Icon(Icons.Filled.Schedule, contentDescription = null)
-                Text("Sprawdź ramówkę", modifier = Modifier.padding(start = 8.dp))
+            item {
+                Button(modifier = Modifier.fillMaxWidth(), onClick = { loadSchedule() }) {
+                    Icon(Icons.Filled.Schedule, contentDescription = null)
+                    Text("Sprawdź ramówkę", modifier = Modifier.padding(start = 8.dp))
+                }
             }
-            Button(
-                modifier = Modifier.fillMaxWidth(),
-                onClick = {
-                    scope.launch {
-                        val available = runCatching { appContainer.repository.getTpAvailability() }.getOrNull()?.available == true
-                        if (available) {
-                            navController.navigate(AppRoutes.CONTACT_MENU)
-                        } else {
-                            snackbarHostState.showSnackbar("Na antenie nie trwa teraz audycja interaktywna.")
+            item {
+                Button(
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = {
+                        scope.launch {
+                            val available = runCatching { appContainer.repository.getTpAvailability() }.getOrNull()?.available == true
+                            if (available) {
+                                navController.navigate(AppRoutes.CONTACT_MENU)
+                            } else {
+                                snackbarHostState.showSnackbar("Na antenie nie trwa teraz audycja interaktywna.")
+                            }
                         }
                     }
+                ) {
+                    Icon(Icons.Outlined.RecordVoiceOver, contentDescription = null)
+                    Text("Skontaktuj się z Tyfloradiem", modifier = Modifier.padding(start = 8.dp))
                 }
-            ) {
-                Icon(Icons.Outlined.RecordVoiceOver, contentDescription = null)
-                Text("Skontaktuj się z Tyfloradiem", modifier = Modifier.padding(start = 8.dp))
             }
 
             if (isLoadingSchedule) {
-                StatePane(message = "Ładowanie ramówki…", showLoading = true)
+                item { StatePane(message = "Ładowanie ramówki…", showLoading = true) }
             } else if (scheduleText != null) {
-                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        Text("Ramówka", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                        Text(scheduleText.orEmpty(), style = MaterialTheme.typography.bodyLarge)
+                item {
+                    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Text("Ramówka", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                            Text(scheduleText.orEmpty(), style = MaterialTheme.typography.bodyLarge)
+                        }
                     }
                 }
             } else if (errorMessage != null) {
-                StatePane(message = errorMessage.orEmpty())
+                item { StatePane(message = errorMessage.orEmpty()) }
             }
         }
     }
@@ -279,6 +289,7 @@ fun PlayerScreen(
         navController = navController,
         title = "Odtwarzacz",
         snackbarHostState = snackbarHostState,
+        showMiniPlayer = false,
         actions = {
             CastRouteButton()
         }
@@ -351,19 +362,20 @@ fun PlayerScreen(
                                 onValueChange = { appContainer.playerController.seekTo(it.toLong()) },
                                 valueRange = 0f..duration.coerceAtLeast(1L).toFloat()
                             )
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                                Button(onClick = { appContainer.playerController.setPlaybackRate(PlaybackRatePolicy.previous(playerState.playbackRate)) }) {
-                                    Icon(Icons.Filled.Speed, contentDescription = null)
-                                    Text("Wolniej", modifier = Modifier.padding(start = 8.dp))
+                            PlaybackRateControls(
+                                playbackRate = playerState.playbackRate,
+                                onPrevious = {
+                                    appContainer.playerController.setPlaybackRate(
+                                        PlaybackRatePolicy.previous(playerState.playbackRate)
+                                    )
+                                },
+                                onCycle = { appContainer.playerController.cyclePlaybackRate() },
+                                onNext = {
+                                    appContainer.playerController.setPlaybackRate(
+                                        PlaybackRatePolicy.next(playerState.playbackRate)
+                                    )
                                 }
-                                Button(onClick = { appContainer.playerController.cyclePlaybackRate() }) {
-                                    Text("Prędkość ${PlaybackRatePolicy.format(playerState.playbackRate)}x")
-                                }
-                                Button(onClick = { appContainer.playerController.setPlaybackRate(PlaybackRatePolicy.next(playerState.playbackRate)) }) {
-                                    Icon(Icons.Filled.Speed, contentDescription = null)
-                                    Text("Szybciej", modifier = Modifier.padding(start = 8.dp))
-                                }
-                            }
+                            )
                         } else {
                             Button(
                                 modifier = Modifier.fillMaxWidth(),
@@ -589,6 +601,33 @@ fun PlayerRelatedLinksScreen(
                     }
                 )
             }
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun PlaybackRateControls(
+    playbackRate: Float,
+    onPrevious: () -> Unit,
+    onCycle: () -> Unit,
+    onNext: () -> Unit
+) {
+    FlowRow(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Button(onClick = onPrevious) {
+            Icon(Icons.Filled.Speed, contentDescription = null)
+            Text("Wolniej", modifier = Modifier.padding(start = 8.dp))
+        }
+        Button(onClick = onCycle) {
+            Text("Prędkość ${PlaybackRatePolicy.format(playbackRate)}x")
+        }
+        Button(onClick = onNext) {
+            Icon(Icons.Filled.Speed, contentDescription = null)
+            Text("Szybciej", modifier = Modifier.padding(start = 8.dp))
         }
     }
 }
