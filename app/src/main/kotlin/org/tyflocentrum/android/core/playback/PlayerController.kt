@@ -64,6 +64,20 @@ class PlayerController(
         .setRemotePlayer(remotePlayer)
         .build()
     val mediaSession: MediaSession = MediaSession.Builder(appContext, player)
+        .setCallback(
+            object : MediaSession.Callback {
+                override fun onMediaButtonEvent(
+                    session: MediaSession,
+                    controllerInfo: MediaSession.ControllerInfo,
+                    intent: Intent
+                ): Boolean {
+                    if (mediaButtonOverride?.invoke(intent) == true) {
+                        return true
+                    }
+                    return super.onMediaButtonEvent(session, controllerInfo, intent)
+                }
+            }
+        )
         .setMediaButtonPreferences(buildMediaButtons(isLive = false))
         .build()
 
@@ -73,6 +87,8 @@ class PlayerController(
     private var settingsSnapshot = AppSettings()
     private var progressJob: Job? = null
     private var lastResumeSaveAt: Long = 0
+    @Volatile
+    private var mediaButtonOverride: ((Intent) -> Boolean)? = null
 
     init {
         player.addListener(
@@ -177,6 +193,11 @@ class PlayerController(
 
     fun resume() {
         ensurePlaybackServiceRunning()
+        if (_uiState.value.current?.isLive == true &&
+            player.isCommandAvailable(Player.COMMAND_SEEK_TO_DEFAULT_POSITION)
+        ) {
+            player.seekToDefaultPosition()
+        }
         player.playWhenReady = true
         updateUiState()
     }
@@ -238,6 +259,10 @@ class PlayerController(
     }
 
     fun isCastAvailable(): Boolean = player.isCastSessionAvailable
+
+    fun setMediaButtonOverride(handler: ((Intent) -> Boolean)?) {
+        mediaButtonOverride = handler
+    }
 
     private fun applyCurrentPlaybackRateFromPreferences() {
         val current = _uiState.value.current ?: return

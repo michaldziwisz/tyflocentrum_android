@@ -68,11 +68,11 @@ class VoiceRecorderController(
     val recordedFileOrNull: File?
         get() = recordedFile
 
-    fun startRecording(maxDurationMs: Long = 20 * 60 * 1000L) {
-        if (_uiState.value.state == RecorderState.RECORDING || _uiState.value.isProcessing) return
+    fun startRecording(maxDurationMs: Long = 20 * 60 * 1000L): Boolean {
+        if (_uiState.value.state == RecorderState.RECORDING || _uiState.value.isProcessing) return false
         if (!hasMicrophonePermission()) {
             showError("Brak dostępu do mikrofonu. Włącz uprawnienia w ustawieniach systemu.")
-            return
+            return false
         }
 
         this.maxDurationMs = maxDurationMs
@@ -84,7 +84,7 @@ class VoiceRecorderController(
         val remainingMs = maxDurationMs - baseDurationMs
         if (remainingMs <= 250L) {
             showError("Osiągnięto limit długości nagrania.")
-            return
+            return false
         }
 
         if (!shouldAppend) {
@@ -104,6 +104,7 @@ class VoiceRecorderController(
         activeSegmentFile = File(appContext.cacheDir, "voice-segment-${System.currentTimeMillis()}.m4a")
         recordingOffsetMs = baseDurationMs
         recordingStartedAtElapsedRealtime = SystemClock.elapsedRealtime()
+        var didStartRecording = false
 
         runCatching {
             val currentRecorder = MediaRecorder().apply {
@@ -144,6 +145,7 @@ class VoiceRecorderController(
                     errorMessage = null
                 )
             )
+            didStartRecording = true
         }.onFailure {
             cleanupFile(activeSegmentFile)
             activeSegmentFile = null
@@ -151,10 +153,11 @@ class VoiceRecorderController(
             recordingOffsetMs = 0
             showError("Nie udało się rozpocząć nagrywania.")
         }
+        return didStartRecording
     }
 
-    fun stopRecording() {
-        if (_uiState.value.state != RecorderState.RECORDING) return
+    fun stopRecording(): Boolean {
+        if (_uiState.value.state != RecorderState.RECORDING) return false
 
         timerJob?.cancel()
         timerJob = null
@@ -181,12 +184,12 @@ class VoiceRecorderController(
                     elapsedMs = _uiState.value.recordedDurationMs.toLong()
                 )
             )
-            return
+            return true
         }
 
         if (baseFile != null && baseFile.exists()) {
             mergeSegments(baseFile, usableSegment)
-            return
+            return true
         }
 
         recordedFile = usableSegment
@@ -200,6 +203,7 @@ class VoiceRecorderController(
                 errorMessage = null
             )
         )
+        return true
     }
 
     fun togglePreview() {

@@ -7,6 +7,11 @@ import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
+import android.media.AudioManager
+import android.media.ToneGenerator
+import android.os.Build
+import android.view.HapticFeedbackConstants
+import android.view.KeyEvent
 import android.view.MotionEvent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -62,6 +67,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.ExperimentalComposeUiApi
@@ -73,6 +79,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInteropFilter
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -107,6 +114,7 @@ import org.tyflocentrum.android.core.recording.VoiceRecorderController
 import org.tyflocentrum.android.ui.AppRoutes
 import org.tyflocentrum.android.ui.LocalAppContainer
 import org.tyflocentrum.android.ui.common.AccessibleHtmlText
+import org.tyflocentrum.android.ui.common.Announcement
 import org.tyflocentrum.android.ui.common.AppScreenScaffold
 import org.tyflocentrum.android.ui.common.CastRouteButton
 import org.tyflocentrum.android.ui.common.ContentListItem
@@ -942,26 +950,89 @@ fun ContactVoiceMessageScreen(
     val appContainer = LocalAppContainer.current
     val draft by appContainer.preferencesRepository.contactDraftFlow.collectAsStateWithLifecycle(ContactDraft())
     val context = LocalContext.current
+    val view = LocalView.current
     val scope = rememberCoroutineScope()
     val recorder = remember { VoiceRecorderController(context, appContainer.playerController) }
     val recorderState by recorder.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     val nameFocusRequester = remember { FocusRequester() }
+    val toneGenerator = remember { ToneGenerator(AudioManager.STREAM_NOTIFICATION, 100) }
     var name by rememberSaveable { mutableStateOf("") }
     var didEditName by rememberSaveable { mutableStateOf(false) }
     var isSending by remember { mutableStateOf(false) }
     var earModeEnabled by remember { mutableStateOf(false) }
     var holdLocked by remember { mutableStateOf(false) }
     var holdStartJob by remember { mutableStateOf<Job?>(null) }
+    var assistedStartJob by remember { mutableStateOf<Job?>(null) }
     var holdStartY by remember { mutableFloatStateOf(0f) }
     var nameError by remember { mutableStateOf<String?>(null) }
     var formMessage by remember { mutableStateOf<String?>(null) }
+    var isAwaitingCue by remember { mutableStateOf(false) }
+    var accessibilityAnnouncement by remember { mutableStateOf<String?>(null) }
 
     val sensorManager = remember {
         context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
     }
     val proximitySensor = remember { sensorManager.getDefaultSensor(Sensor.TYPE_PROXIMITY) }
     val supportsEarMode = proximitySensor != null
+    val currentRecorderState by rememberUpdatedState(recorderState.state)
+    val currentAwaitingCue by rememberUpdatedState(isAwaitingCue)
+
+    fun performStartHaptic() {
+        view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+    }
+
+    fun performStopHaptic() {
+        view.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+    }
+
+    fun cancelPendingAssistedStart() {
+        assistedStartJob?.cancel()
+        assistedStartJob = null
+        isAwaitingCue = false
+        accessibilityAnnouncement = null
+    }
+
+    fun beginRecordingNow(withHaptic: Boolean = false): Boolean {
+        formMessage = null
+        val started = recorder.startRecording()
+        if (started && withHaptic) {
+            performStartHaptic()
+        }
+        return started
+    }
+
+    fun stopCurrentRecording(withHaptic: Boolean = false): Boolean {
+        cancelPendingAssistedStart()
+        val stopped = recorder.stopRecording()
+        if (stopped && withHaptic) {
+            performStopHaptic()
+        }
+        return stopped
+    }
+
+    fun launchPromptedRecording() {
+        if (isAwaitingCue || recorderState.isProcessing || isSending) return
+        cancelPendingAssistedStart()
+        holdStartJob?.cancel()
+        holdStartJob = null
+        formMessage = null
+        accessibilityAnnouncement = "Mów po sygnale"
+        isAwaitingCue = true
+        appContainer.playerController.pause()
+        assistedStartJob = scope.launch {
+            try {
+                delay(250)
+                toneGenerator.startTone(ToneGenerator.TONE_PROP_BEEP2, 180)
+                delay(220)
+                beginRecordingNow()
+            } finally {
+                assistedStartJob = null
+                isAwaitingCue = false
+                accessibilityAnnouncement = null
+            }
+        }
+    }
 
     LaunchedEffect(draft.name) {
         if (!didEditName) {
@@ -979,16 +1050,54 @@ fun ContactVoiceMessageScreen(
         contract = ActivityResultContracts.RequestPermission()
     ) { granted ->
         if (granted) {
-            recorder.startRecording()
+            launchPromptedRecording()
         } else {
             scope.launch { snackbarHostState.showSnackbar("Bez dostępu do mikrofonu nie można nagrać głosówki.") }
         }
     }
 
+    val onMediaButtonToggle by rememberUpdatedState(
+        newValue = {
+            formMessage = null
+            if (recorderState.state == RecorderState.RECORDING) {
+                stopCurrentRecording()
+            } else if (hasRecordPermission(context)) {
+                launchPromptedRecording()
+            } else {
+                permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+            }
+        }
+    )
+
     DisposableEffect(Unit) {
         onDispose {
             holdStartJob?.cancel()
+            cancelPendingAssistedStart()
+            runCatching { toneGenerator.release() }
             recorder.reset()
+        }
+    }
+
+    DisposableEffect(appContainer.playerController) {
+        val handler: (Intent) -> Boolean = handler@{ intent ->
+            val keyEvent = intent.mediaButtonKeyEvent() ?: return@handler false
+            if (!keyEvent.isVoiceRecorderControlKey()) {
+                return@handler false
+            }
+            when (keyEvent.action) {
+                KeyEvent.ACTION_DOWN -> {
+                    if (keyEvent.repeatCount == 0) {
+                        onMediaButtonToggle()
+                    }
+                    true
+                }
+                KeyEvent.ACTION_UP -> true
+                else -> false
+            }
+        }
+        appContainer.playerController.setMediaButtonOverride(handler)
+        onDispose {
+            appContainer.playerController.setMediaButtonOverride(null)
         }
     }
 
@@ -1000,11 +1109,11 @@ fun ContactVoiceMessageScreen(
                 override fun onSensorChanged(event: SensorEvent?) {
                     val sensor = event?.values?.firstOrNull() ?: return
                     val isNear = sensor < (proximitySensor.maximumRange.coerceAtMost(5f))
-                    if (isNear && recorderState.state != RecorderState.RECORDING) {
+                    if (isNear && currentRecorderState != RecorderState.RECORDING && !currentAwaitingCue) {
                         if (hasRecordPermission(context)) {
-                            recorder.startRecording()
+                            beginRecordingNow()
                         }
-                    } else if (!isNear && recorderState.state == RecorderState.RECORDING) {
+                    } else if (!isNear && currentRecorderState == RecorderState.RECORDING) {
                         recorder.stopRecording()
                     }
                 }
@@ -1024,6 +1133,8 @@ fun ContactVoiceMessageScreen(
             recorder.clearError()
         }
     }
+
+    Announcement(accessibilityAnnouncement)
 
     AppScreenScaffold(
         navController = navController,
@@ -1062,7 +1173,7 @@ fun ContactVoiceMessageScreen(
             }
 
             Text(
-                text = "TalkBack: użyj przycisku Rozpocznij/Zatrzymaj nagrywanie. Dla wygody dotykowej możesz też przytrzymać pole poniżej i przeciągnąć w górę, aby zablokować nagrywanie.",
+                text = "TalkBack: użyj przycisku Rozpocznij/Zatrzymaj nagrywanie albo gestu 2 palce 2 razy w ekran. Po starcie usłyszysz komunikat i sygnał, dopiero potem zaczyna się nagrywanie. Dla wygody dotykowej możesz też przytrzymać pole poniżej i przeciągnąć w górę, aby zablokować nagrywanie.",
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -1072,14 +1183,14 @@ fun ContactVoiceMessageScreen(
                 onClick = {
                     formMessage = null
                     if (recorderState.state == RecorderState.RECORDING) {
-                        recorder.stopRecording()
+                        stopCurrentRecording()
                     } else if (hasRecordPermission(context)) {
-                        recorder.startRecording()
+                        launchPromptedRecording()
                     } else {
                         permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
                     }
                 },
-                enabled = !recorderState.isProcessing && !isSending
+                enabled = !recorderState.isProcessing && !isSending && !isAwaitingCue
             ) {
                 Icon(
                     imageVector = if (recorderState.state == RecorderState.RECORDING) Icons.Filled.StopCircle else Icons.Filled.Mic,
@@ -1087,6 +1198,7 @@ fun ContactVoiceMessageScreen(
                 )
                 Text(
                     text = when {
+                        isAwaitingCue -> "Czekaj na sygnał…"
                         recorderState.state == RecorderState.RECORDING -> "Zatrzymaj nagrywanie"
                         recorderState.recordedDurationMs > 0 -> "Dograj kolejny fragment"
                         else -> "Rozpocznij nagrywanie"
@@ -1107,6 +1219,7 @@ fun ContactVoiceMessageScreen(
                         contentDescription =
                             "Obszar przytrzymaj i mów. Dla TalkBack wygodniejszy jest przycisk rozpoczęcia i zatrzymania nagrywania."
                         stateDescription = when {
+                            isAwaitingCue -> "Oczekiwanie na sygnał"
                             recorderState.state == RecorderState.RECORDING && holdLocked -> "Nagrywanie zablokowane"
                             recorderState.state == RecorderState.RECORDING -> "Nagrywanie trwa"
                             recorderState.recordedDurationMs > 0 -> "Gotowe do dogrania kolejnego fragmentu"
@@ -1116,13 +1229,16 @@ fun ContactVoiceMessageScreen(
                     .pointerInteropFilter { event ->
                         when (event.actionMasked) {
                             MotionEvent.ACTION_DOWN -> {
+                                if (isAwaitingCue || recorderState.isProcessing || isSending) {
+                                    return@pointerInteropFilter true
+                                }
                                 holdStartY = event.y
                                 holdLocked = false
                                 holdStartJob?.cancel()
                                 holdStartJob = scope.launch {
                                     delay(200)
                                     if (hasRecordPermission(context)) {
-                                        recorder.startRecording()
+                                        beginRecordingNow(withHaptic = true)
                                     }
                                 }
                                 true
@@ -1138,7 +1254,7 @@ fun ContactVoiceMessageScreen(
                                 holdStartJob?.cancel()
                                 holdStartJob = null
                                 if (recorderState.state == RecorderState.RECORDING && !holdLocked) {
-                                    recorder.stopRecording()
+                                    stopCurrentRecording(withHaptic = true)
                                 }
                                 true
                             }
@@ -1149,6 +1265,7 @@ fun ContactVoiceMessageScreen(
             ) {
                 Text(
                     text = when {
+                        isAwaitingCue -> "Mów po sygnale"
                         recorderState.state == RecorderState.RECORDING && holdLocked -> "Nagrywanie zablokowane"
                         recorderState.state == RecorderState.RECORDING -> "Nagrywanie…"
                         recorderState.recordedDurationMs > 0 -> "Przytrzymaj i dograj"
@@ -1162,6 +1279,7 @@ fun ContactVoiceMessageScreen(
 
             StatePane(
                 message = when {
+                    isAwaitingCue -> "Mów po sygnale. Nagrywanie zacznie się po krótkim sygnale dźwiękowym."
                     recorderState.isProcessing -> "Przygotowywanie nagrania…"
                     recorderState.state == RecorderState.RECORDING -> "Nagrywanie… ${formatPlaybackTime(recorderState.elapsedMs)}"
                     recorderState.recordedDurationMs > 0 -> "Nagranie gotowe. Możesz odsłuchać, usunąć albo dograć kolejny fragment."
@@ -1287,6 +1405,26 @@ private fun copyToClipboard(context: Context, value: String) {
 private fun openUri(context: Context, value: String) {
     val intent = Intent(Intent.ACTION_VIEW, value.toUri())
     ContextCompat.startActivity(context, intent, null)
+}
+
+private fun Intent.mediaButtonKeyEvent(): KeyEvent? {
+    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        getParcelableExtra(Intent.EXTRA_KEY_EVENT, KeyEvent::class.java)
+    } else {
+        @Suppress("DEPRECATION")
+        getParcelableExtra(Intent.EXTRA_KEY_EVENT)
+    }
+}
+
+private fun KeyEvent.isVoiceRecorderControlKey(): Boolean {
+    return when (keyCode) {
+        KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
+        KeyEvent.KEYCODE_MEDIA_PLAY,
+        KeyEvent.KEYCODE_MEDIA_PAUSE,
+        KeyEvent.KEYCODE_MEDIA_STOP,
+        KeyEvent.KEYCODE_HEADSETHOOK -> true
+        else -> false
+    }
 }
 
 private fun hasRecordPermission(context: Context): Boolean {
