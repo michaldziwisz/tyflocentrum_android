@@ -49,6 +49,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -1261,7 +1262,7 @@ fun ContactVoiceMessageScreen(
                     )
                 }
             } else {
-                StatePane(
+                RecorderStatusCard(
                     message = when {
                         isAwaitingCue -> "Najpierw komunikat, potem sygnał. Nagrywanie zacznie się dopiero po sygnale dźwiękowym."
                         recorderState.isProcessing -> "Przygotowywanie nagrania…"
@@ -1319,6 +1320,34 @@ fun ContactVoiceMessageScreen(
                     Text(if (isSending) "Wysyłanie…" else "Wyślij głosówkę", modifier = Modifier.padding(start = 8.dp))
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun RecorderStatusCard(
+    message: String,
+    showLoading: Boolean
+) {
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(20.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            if (showLoading) {
+                CircularProgressIndicator(modifier = Modifier.height(24.dp))
+            }
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodyLarge
+            )
         }
     }
 }
