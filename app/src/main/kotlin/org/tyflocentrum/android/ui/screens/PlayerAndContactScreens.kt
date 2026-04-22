@@ -126,6 +126,11 @@ import kotlin.coroutines.resume
 
 private const val RADIO_STREAM_URL = "https://radio.tyflopodcast.net/hls/stream.m3u8"
 
+private enum class VoiceCueMode {
+    SPOKEN_PROMPT,
+    TONE_ONLY
+}
+
 @Composable
 fun RadioHomeScreen(
     navController: NavHostController,
@@ -970,6 +975,7 @@ fun ContactVoiceMessageScreen(
     var nameError by remember { mutableStateOf<String?>(null) }
     var formMessage by remember { mutableStateOf<String?>(null) }
     var isAwaitingCue by remember { mutableStateOf(false) }
+    var awaitingCueUsesLiveMessage by remember { mutableStateOf(true) }
 
     fun performStartHaptic() {
         view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
@@ -983,6 +989,7 @@ fun ContactVoiceMessageScreen(
         assistedStartJob?.cancel()
         assistedStartJob = null
         isAwaitingCue = false
+        awaitingCueUsesLiveMessage = true
         voicePromptSpeaker.stop()
     }
 
@@ -1004,21 +1011,26 @@ fun ContactVoiceMessageScreen(
         return stopped
     }
 
-    fun launchPromptedRecording() {
+    fun launchPromptedRecording(cueMode: VoiceCueMode = VoiceCueMode.SPOKEN_PROMPT) {
         if (isAwaitingCue || recorderState.isProcessing || isSending) return
         cancelPendingAssistedStart()
         holdStartJob?.cancel()
         holdStartJob = null
         formMessage = null
         isAwaitingCue = true
+        awaitingCueUsesLiveMessage = cueMode == VoiceCueMode.SPOKEN_PROMPT
         appContainer.playerController.pause()
         assistedStartJob = scope.launch {
             try {
-                val promptPlayed = voicePromptSpeaker.speak("Mów po sygnale")
-                if (promptPlayed) {
-                    delay(120)
+                if (cueMode == VoiceCueMode.SPOKEN_PROMPT) {
+                    val promptPlayed = voicePromptSpeaker.speak("Mów po sygnale")
+                    if (promptPlayed) {
+                        delay(120)
+                    } else {
+                        delay(250)
+                    }
                 } else {
-                    delay(250)
+                    delay(450)
                 }
                 toneGenerator.startTone(ToneGenerator.TONE_PROP_PROMPT, 320)
                 delay(380)
@@ -1026,6 +1038,7 @@ fun ContactVoiceMessageScreen(
             } finally {
                 assistedStartJob = null
                 isAwaitingCue = false
+                awaitingCueUsesLiveMessage = true
             }
         }
     }
@@ -1046,7 +1059,7 @@ fun ContactVoiceMessageScreen(
         contract = ActivityResultContracts.RequestPermission()
     ) { granted ->
         if (granted) {
-            launchPromptedRecording()
+            launchPromptedRecording(VoiceCueMode.SPOKEN_PROMPT)
         } else {
             scope.launch { snackbarHostState.showSnackbar("Bez dostępu do mikrofonu nie można nagrać głosówki.") }
         }
@@ -1058,7 +1071,7 @@ fun ContactVoiceMessageScreen(
             if (recorderState.state == RecorderState.RECORDING) {
                 stopCurrentRecording()
             } else if (hasRecordPermission(context)) {
-                launchPromptedRecording()
+                launchPromptedRecording(VoiceCueMode.TONE_ONLY)
             } else {
                 permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
             }
@@ -1145,7 +1158,7 @@ fun ContactVoiceMessageScreen(
                     if (recorderState.state == RecorderState.RECORDING) {
                         stopCurrentRecording()
                     } else if (hasRecordPermission(context)) {
-                        launchPromptedRecording()
+                        launchPromptedRecording(VoiceCueMode.SPOKEN_PROMPT)
                     } else {
                         permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
                     }
@@ -1237,16 +1250,28 @@ fun ContactVoiceMessageScreen(
                 )
             }
 
-            StatePane(
-                message = when {
-                    isAwaitingCue -> "Najpierw komunikat, potem sygnał. Nagrywanie zacznie się dopiero po sygnale dźwiękowym."
-                    recorderState.isProcessing -> "Przygotowywanie nagrania…"
-                    recorderState.state == RecorderState.RECORDING -> "Nagrywanie… ${formatPlaybackTime(recorderState.elapsedMs)}"
-                    recorderState.recordedDurationMs > 0 -> "Nagranie gotowe. Możesz odsłuchać, usunąć albo dograć kolejny fragment."
-                    else -> "Gotowe do nagrywania"
-                },
-                showLoading = recorderState.isProcessing
-            )
+            if (isAwaitingCue && !awaitingCueUsesLiveMessage) {
+                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+                    Text(
+                        text = "Czekaj na sygnał dźwiękowy.",
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(20.dp),
+                        style = MaterialTheme.typography.bodyLarge
+                    )
+                }
+            } else {
+                StatePane(
+                    message = when {
+                        isAwaitingCue -> "Najpierw komunikat, potem sygnał. Nagrywanie zacznie się dopiero po sygnale dźwiękowym."
+                        recorderState.isProcessing -> "Przygotowywanie nagrania…"
+                        recorderState.state == RecorderState.RECORDING -> "Nagrywanie… ${formatPlaybackTime(recorderState.elapsedMs)}"
+                        recorderState.recordedDurationMs > 0 -> "Nagranie gotowe. Możesz odsłuchać, usunąć albo dograć kolejny fragment."
+                        else -> "Gotowe do nagrywania"
+                    },
+                    showLoading = recorderState.isProcessing
+                )
+            }
 
             if (recorderState.recordedDurationMs > 0) {
                 Button(modifier = Modifier.fillMaxWidth(), onClick = { recorder.togglePreview() }, enabled = !isSending) {
