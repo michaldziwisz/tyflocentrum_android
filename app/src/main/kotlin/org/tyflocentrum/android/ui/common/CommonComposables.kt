@@ -2,7 +2,9 @@ package org.tyflocentrum.android.ui.common
 
 import android.content.Intent
 import android.graphics.Typeface
+import android.text.SpannableString
 import android.text.method.LinkMovementMethod
+import android.text.util.Linkify
 import android.text.style.URLSpan
 import android.view.View
 import android.widget.TextView
@@ -83,6 +85,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.text.HtmlCompat
+import androidx.core.text.util.LinkifyCompat
 import androidx.core.view.ViewCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavDestination
@@ -374,6 +377,90 @@ fun PlainTextScreen(
             style = MaterialTheme.typography.bodyLarge.copy(lineHeight = 28.sp)
         )
     }
+}
+
+@Composable
+fun LinkifiedPlainText(
+    text: String,
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+    val textColor = MaterialTheme.colorScheme.onSurface.toArgb()
+    val linkColor = MaterialTheme.colorScheme.primary.toArgb()
+    val textSizeSp = MaterialTheme.typography.bodyLarge.fontSize.value
+    val lineHeightMultiplier = if (
+        MaterialTheme.typography.bodyLarge.lineHeight.value > 0f &&
+        textSizeSp > 0f
+    ) {
+        MaterialTheme.typography.bodyLarge.lineHeight.value / textSizeSp
+    } else {
+        1.3f
+    }
+    val blocks = remember(text) {
+        text.lines().map { it.trimEnd() }
+    }
+
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        blocks.forEach { block ->
+            if (block.isBlank()) {
+                Spacer(modifier = Modifier.height(4.dp))
+            } else {
+                LinkifiedTextBlock(
+                    text = block,
+                    context = context,
+                    textColor = textColor,
+                    linkColor = linkColor,
+                    textSizeSp = textSizeSp,
+                    lineHeightMultiplier = lineHeightMultiplier
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun LinkifiedTextBlock(
+    text: String,
+    context: android.content.Context,
+    textColor: Int,
+    linkColor: Int,
+    textSizeSp: Float,
+    lineHeightMultiplier: Float
+) {
+    val linkifiedText = remember(text) {
+        SpannableString(text).also { spannable ->
+            LinkifyCompat.addLinks(
+                spannable,
+                Linkify.WEB_URLS or Linkify.EMAIL_ADDRESSES or Linkify.PHONE_NUMBERS
+            )
+        }
+    }
+    val hasLinks = remember(linkifiedText) {
+        linkifiedText.getSpans(0, linkifiedText.length, URLSpan::class.java).isNotEmpty()
+    }
+
+    AndroidView(
+        modifier = Modifier.fillMaxWidth(),
+        factory = {
+            TextView(context).apply {
+                importantForAccessibility = TextView.IMPORTANT_FOR_ACCESSIBILITY_YES
+                setPadding(0, 0, 0, 0)
+            }
+        },
+        update = { textView ->
+            textView.text = linkifiedText
+            textView.setTextColor(textColor)
+            textView.setLinkTextColor(linkColor)
+            textView.textSize = textSizeSp
+            textView.setLineSpacing(0f, lineHeightMultiplier)
+            textView.linksClickable = hasLinks
+            textView.movementMethod = if (hasLinks) LinkMovementMethod.getInstance() else null
+            textView.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
+        }
+    )
 }
 
 @Composable

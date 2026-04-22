@@ -111,6 +111,7 @@ import org.tyflocentrum.android.ui.common.AppScreenScaffold
 import org.tyflocentrum.android.ui.common.CastRouteButton
 import org.tyflocentrum.android.ui.common.ContentListItem
 import org.tyflocentrum.android.ui.common.FullScreenScrollable
+import org.tyflocentrum.android.ui.common.LinkifiedPlainText
 import org.tyflocentrum.android.ui.common.StatePane
 
 private const val RADIO_STREAM_URL = "https://radio.tyflopodcast.net/hls/stream.m3u8"
@@ -213,7 +214,7 @@ fun RadioHomeScreen(
                             verticalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
                             Text("Ramówka", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                            Text(scheduleText.orEmpty(), style = MaterialTheme.typography.bodyLarge)
+                            LinkifiedPlainText(scheduleText.orEmpty())
                         }
                     }
                 }
