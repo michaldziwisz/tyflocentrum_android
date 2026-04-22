@@ -3,16 +3,13 @@ package org.tyflocentrum.android.ui.screens
 import android.Manifest
 import android.content.Context
 import android.content.Intent
-import android.hardware.Sensor
-import android.hardware.SensorEvent
-import android.hardware.SensorEventListener
-import android.hardware.SensorManager
 import android.media.AudioManager
 import android.media.ToneGenerator
 import android.os.Build
 import android.view.HapticFeedbackConstants
 import android.view.KeyEvent
 import android.view.MotionEvent
+import android.view.accessibility.AccessibilityManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -30,7 +27,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Favorite
@@ -80,7 +76,6 @@ import androidx.compose.ui.input.pointer.pointerInteropFilter
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -960,7 +955,6 @@ fun ContactVoiceMessageScreen(
     var name by rememberSaveable { mutableStateOf("") }
     var didEditName by rememberSaveable { mutableStateOf(false) }
     var isSending by remember { mutableStateOf(false) }
-    var earModeEnabled by remember { mutableStateOf(false) }
     var holdLocked by remember { mutableStateOf(false) }
     var holdStartJob by remember { mutableStateOf<Job?>(null) }
     var assistedStartJob by remember { mutableStateOf<Job?>(null) }
@@ -969,14 +963,9 @@ fun ContactVoiceMessageScreen(
     var formMessage by remember { mutableStateOf<String?>(null) }
     var isAwaitingCue by remember { mutableStateOf(false) }
     var accessibilityAnnouncement by remember { mutableStateOf<String?>(null) }
-
-    val sensorManager = remember {
-        context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
+    val accessibilityManager = remember {
+        context.getSystemService(Context.ACCESSIBILITY_SERVICE) as AccessibilityManager
     }
-    val proximitySensor = remember { sensorManager.getDefaultSensor(Sensor.TYPE_PROXIMITY) }
-    val supportsEarMode = proximitySensor != null
-    val currentRecorderState by rememberUpdatedState(recorderState.state)
-    val currentAwaitingCue by rememberUpdatedState(isAwaitingCue)
 
     fun performStartHaptic() {
         view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
@@ -1022,9 +1011,10 @@ fun ContactVoiceMessageScreen(
         appContainer.playerController.pause()
         assistedStartJob = scope.launch {
             try {
-                delay(250)
-                toneGenerator.startTone(ToneGenerator.TONE_PROP_BEEP2, 180)
-                delay(220)
+                val cueDelayMs = if (accessibilityManager.isEnabled) 1400L else 500L
+                delay(cueDelayMs)
+                toneGenerator.startTone(ToneGenerator.TONE_PROP_PROMPT, 350)
+                delay(380)
                 beginRecordingNow()
             } finally {
                 assistedStartJob = null
@@ -1101,32 +1091,6 @@ fun ContactVoiceMessageScreen(
         }
     }
 
-    DisposableEffect(earModeEnabled, proximitySensor) {
-        if (!earModeEnabled || proximitySensor == null) {
-            onDispose { }
-        } else {
-            val listener = object : SensorEventListener {
-                override fun onSensorChanged(event: SensorEvent?) {
-                    val sensor = event?.values?.firstOrNull() ?: return
-                    val isNear = sensor < (proximitySensor.maximumRange.coerceAtMost(5f))
-                    if (isNear && currentRecorderState != RecorderState.RECORDING && !currentAwaitingCue) {
-                        if (hasRecordPermission(context)) {
-                            beginRecordingNow()
-                        }
-                    } else if (!isNear && currentRecorderState == RecorderState.RECORDING) {
-                        recorder.stopRecording()
-                    }
-                }
-
-                override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
-            }
-            sensorManager.registerListener(listener, proximitySensor, SensorManager.SENSOR_DELAY_NORMAL)
-            onDispose {
-                sensorManager.unregisterListener(listener)
-            }
-        }
-    }
-
     LaunchedEffect(recorderState.errorMessage) {
         if (!recorderState.errorMessage.isNullOrBlank()) {
             snackbarHostState.showSnackbar(recorderState.errorMessage!!)
@@ -1163,17 +1127,8 @@ fun ContactVoiceMessageScreen(
                 }
             )
 
-            if (supportsEarMode) {
-                ToggleCard(
-                    title = "Nagrywaj po przyłożeniu telefonu do ucha",
-                    checked = earModeEnabled,
-                    onCheckedChange = { earModeEnabled = it },
-                    supportingText = "Przyłożenie telefonu rozpoczyna nagrywanie, oderwanie kończy."
-                )
-            }
-
             Text(
-                text = "TalkBack: użyj przycisku Rozpocznij/Zatrzymaj nagrywanie albo gestu 2 palce 2 razy w ekran. Po starcie usłyszysz komunikat i sygnał, dopiero potem zaczyna się nagrywanie. Dla wygody dotykowej możesz też przytrzymać pole poniżej i przeciągnąć w górę, aby zablokować nagrywanie.",
+                text = "TalkBack: użyj przycisku Rozpocznij/Zatrzymaj nagrywanie albo gestu 2 palce 2 razy w ekran. Najpierw usłyszysz komunikat, potem osobny sygnał i dopiero wtedy zacznie się nagrywanie. Dla wygody dotykowej możesz też przytrzymać pole poniżej i przeciągnąć w górę, aby zablokować nagrywanie.",
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -1279,7 +1234,7 @@ fun ContactVoiceMessageScreen(
 
             StatePane(
                 message = when {
-                    isAwaitingCue -> "Mów po sygnale. Nagrywanie zacznie się po krótkim sygnale dźwiękowym."
+                    isAwaitingCue -> "Najpierw komunikat, potem sygnał. Nagrywanie zacznie się dopiero po sygnale dźwiękowym."
                     recorderState.isProcessing -> "Przygotowywanie nagrania…"
                     recorderState.state == RecorderState.RECORDING -> "Nagrywanie… ${formatPlaybackTime(recorderState.elapsedMs)}"
                     recorderState.recordedDurationMs > 0 -> "Nagranie gotowe. Możesz odsłuchać, usunąć albo dograć kolejny fragment."
@@ -1333,44 +1288,6 @@ fun ContactVoiceMessageScreen(
                     Icon(Icons.Filled.Send, contentDescription = null)
                     Text(if (isSending) "Wysyłanie…" else "Wyślij głosówkę", modifier = Modifier.padding(start = 8.dp))
                 }
-            }
-        }
-    }
-}
-
-@Composable
-private fun ToggleCard(
-    title: String,
-    checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit,
-    supportingText: String
-) {
-    Card(
-        modifier = Modifier
-            .semantics(mergeDescendants = true) {}
-            .toggleable(
-                value = checked,
-                role = Role.Switch,
-                onValueChange = onCheckedChange
-            ),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            Text(text = title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            Text(text = supportingText, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End
-            ) {
-                androidx.compose.material3.Switch(
-                    checked = checked,
-                    onCheckedChange = null
-                )
             }
         }
     }
