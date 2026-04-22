@@ -79,6 +79,7 @@ import androidx.compose.ui.input.pointer.pointerInteropFilter
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -976,7 +977,6 @@ fun ContactVoiceMessageScreen(
     var nameError by remember { mutableStateOf<String?>(null) }
     var formMessage by remember { mutableStateOf<String?>(null) }
     var isAwaitingCue by remember { mutableStateOf(false) }
-    var awaitingCueUsesLiveMessage by remember { mutableStateOf(true) }
 
     fun performStartHaptic() {
         view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
@@ -990,7 +990,6 @@ fun ContactVoiceMessageScreen(
         assistedStartJob?.cancel()
         assistedStartJob = null
         isAwaitingCue = false
-        awaitingCueUsesLiveMessage = true
         voicePromptSpeaker.stop()
     }
 
@@ -1019,7 +1018,6 @@ fun ContactVoiceMessageScreen(
         holdStartJob = null
         formMessage = null
         isAwaitingCue = true
-        awaitingCueUsesLiveMessage = cueMode == VoiceCueMode.SPOKEN_PROMPT
         appContainer.playerController.pause()
         assistedStartJob = scope.launch {
             try {
@@ -1039,7 +1037,6 @@ fun ContactVoiceMessageScreen(
             } finally {
                 assistedStartJob = null
                 isAwaitingCue = false
-                awaitingCueUsesLiveMessage = true
             }
         }
     }
@@ -1172,7 +1169,6 @@ fun ContactVoiceMessageScreen(
                 )
                 Text(
                     text = when {
-                        isAwaitingCue -> "Czekaj na sygnał…"
                         recorderState.state == RecorderState.RECORDING -> "Zatrzymaj nagrywanie"
                         recorderState.recordedDurationMs > 0 -> "Dograj kolejny fragment"
                         else -> "Rozpocznij nagrywanie"
@@ -1189,16 +1185,9 @@ fun ContactVoiceMessageScreen(
                         color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
                         shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp)
                     )
-                    .semantics {
+                    .clearAndSetSemantics {
                         contentDescription =
-                            "Obszar przytrzymaj i mów. Dla TalkBack wygodniejszy jest przycisk rozpoczęcia i zatrzymania nagrywania."
-                        stateDescription = when {
-                            isAwaitingCue -> "Oczekiwanie na sygnał"
-                            recorderState.state == RecorderState.RECORDING && holdLocked -> "Nagrywanie zablokowane"
-                            recorderState.state == RecorderState.RECORDING -> "Nagrywanie trwa"
-                            recorderState.recordedDurationMs > 0 -> "Gotowe do dogrania kolejnego fragmentu"
-                            else -> "Gotowe do nagrywania"
-                        }
+                            "Obszar przytrzymaj i mów. Przytrzymaj, aby nagrywać. Przeciągnij w górę, aby zablokować. Dla TalkBack wygodniejszy jest przycisk rozpoczęcia i zatrzymania nagrywania."
                     }
                     .pointerInteropFilter { event ->
                         when (event.actionMasked) {
@@ -1239,7 +1228,6 @@ fun ContactVoiceMessageScreen(
             ) {
                 Text(
                     text = when {
-                        isAwaitingCue -> "Mów po sygnale"
                         recorderState.state == RecorderState.RECORDING && holdLocked -> "Nagrywanie zablokowane"
                         recorderState.state == RecorderState.RECORDING -> "Nagrywanie…"
                         recorderState.recordedDurationMs > 0 -> "Przytrzymaj i dograj"
@@ -1251,20 +1239,9 @@ fun ContactVoiceMessageScreen(
                 )
             }
 
-            if (isAwaitingCue && !awaitingCueUsesLiveMessage) {
-                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
-                    Text(
-                        text = "Czekaj na sygnał dźwiękowy.",
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(20.dp),
-                        style = MaterialTheme.typography.bodyLarge
-                    )
-                }
-            } else {
+            if (!isAwaitingCue) {
                 RecorderStatusCard(
                     message = when {
-                        isAwaitingCue -> "Najpierw komunikat, potem sygnał. Nagrywanie zacznie się dopiero po sygnale dźwiękowym."
                         recorderState.isProcessing -> "Przygotowywanie nagrania…"
                         recorderState.state == RecorderState.RECORDING -> "Nagrywanie… ${formatPlaybackTime(recorderState.elapsedMs)}"
                         recorderState.recordedDurationMs > 0 -> "Nagranie gotowe. Możesz odsłuchać, usunąć albo dograć kolejny fragment."
