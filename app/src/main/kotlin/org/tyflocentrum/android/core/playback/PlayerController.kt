@@ -1,7 +1,7 @@
 package org.tyflocentrum.android.core.playback
 
-import android.content.Intent
 import android.content.Context
+import android.content.Intent
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.DeviceInfo
@@ -131,6 +131,15 @@ class PlayerController(
                 } ?: C.TIME_UNSET
 
                 if (!sameItem) {
+                    if (player.currentMediaItem != null) {
+                        if (player.isCommandAvailable(Player.COMMAND_STOP)) {
+                            player.stop()
+                        }
+                        if (player.isCommandAvailable(Player.COMMAND_CHANGE_MEDIA_ITEMS)) {
+                            player.clearMediaItems()
+                        }
+                    }
+                    player.playWhenReady = true
                     val mediaItem = buildMediaItem(request)
                     player.setMediaItem(mediaItem, startPosition)
                     mediaSession.setMediaButtonPreferences(buildMediaButtons(isLive = request.isLive))

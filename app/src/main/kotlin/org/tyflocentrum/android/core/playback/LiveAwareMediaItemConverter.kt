@@ -51,7 +51,8 @@ class LiveAwareMediaItemConverter(
     }
 
     private fun MediaItem.isLiveItem(): Boolean {
-        return liveConfiguration != MediaItem.LiveConfiguration.UNSET
+        return liveConfiguration != MediaItem.LiveConfiguration.UNSET ||
+            mediaMetadata.extras?.containsKey(EXTRA_CAST_STREAM_URL) == true
     }
 
     companion object {
