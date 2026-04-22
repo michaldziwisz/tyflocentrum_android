@@ -853,6 +853,7 @@ fun ContactTextMessageScreen(
     var error by remember { mutableStateOf<String?>(null) }
     var nameError by remember { mutableStateOf<String?>(null) }
     var messageError by remember { mutableStateOf<String?>(null) }
+    var showSuccessDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(draft.name) {
         if (!didEditName) {
@@ -936,7 +937,9 @@ fun ContactTextMessageScreen(
                         result.onSuccess {
                             appContainer.preferencesRepository.updateContactDraft(name = trimmedName)
                             appContainer.preferencesRepository.resetContactMessage()
-                            navController.navigateUp()
+                            didEditMessage = false
+                            message = ""
+                            showSuccessDialog = true
                         }.onFailure {
                             error = it.message ?: "Nie udało się wysłać wiadomości."
                         }
@@ -948,6 +951,27 @@ fun ContactTextMessageScreen(
                 Text(if (isSending) "Wysyłanie…" else "Wyślij wiadomość")
             }
         }
+    }
+
+    if (showSuccessDialog) {
+        AlertDialog(
+            onDismissRequest = {
+                showSuccessDialog = false
+                navController.navigateUp()
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showSuccessDialog = false
+                        navController.navigateUp()
+                    }
+                ) {
+                    Text("OK")
+                }
+            },
+            title = { Text("Wiadomość wysłana") },
+            text = { Text("Dziękujemy, wiadomość została wysłana.") }
+        )
     }
 }
 
@@ -977,6 +1001,7 @@ fun ContactVoiceMessageScreen(
     var nameError by remember { mutableStateOf<String?>(null) }
     var formMessage by remember { mutableStateOf<String?>(null) }
     var isAwaitingCue by remember { mutableStateOf(false) }
+    var showSuccessDialog by remember { mutableStateOf(false) }
 
     fun performStartHaptic() {
         view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
@@ -1288,7 +1313,7 @@ fun ContactVoiceMessageScreen(
                             result.onSuccess {
                                 appContainer.preferencesRepository.updateContactDraft(name = trimmedName)
                                 recorder.reset()
-                                navController.navigateUp()
+                                showSuccessDialog = true
                             }.onFailure {
                                 snackbarHostState.showSnackbar(it.message ?: "Nie udało się wysłać głosówki.")
                             }
@@ -1302,6 +1327,27 @@ fun ContactVoiceMessageScreen(
                 }
             }
         }
+    }
+
+    if (showSuccessDialog) {
+        AlertDialog(
+            onDismissRequest = {
+                showSuccessDialog = false
+                navController.navigateUp()
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showSuccessDialog = false
+                        navController.navigateUp()
+                    }
+                ) {
+                    Text("OK")
+                }
+            },
+            title = { Text("Głosówka wysłana") },
+            text = { Text("Dziękujemy, wiadomość została wysłana.") }
+        )
     }
 }
 
