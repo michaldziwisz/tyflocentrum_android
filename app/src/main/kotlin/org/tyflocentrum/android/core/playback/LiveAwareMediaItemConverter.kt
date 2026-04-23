@@ -1,6 +1,7 @@
 package org.tyflocentrum.android.core.playback
 
 import android.os.Bundle
+import android.util.Log
 import androidx.media3.cast.DefaultMediaItemConverter
 import androidx.media3.cast.MediaItemConverter
 import androidx.media3.common.MediaItem
@@ -14,6 +15,12 @@ class LiveAwareMediaItemConverter(
     override fun toMediaQueueItem(mediaItem: MediaItem): MediaQueueItem {
         val queueItem = delegate.toMediaQueueItem(mediaItem)
         if (!mediaItem.isLiveItem()) {
+            debugLog(
+                "cast.queue.default",
+                "mediaId=${mediaItem.mediaId} uri=${mediaItem.localConfiguration?.uri} " +
+                    "contentId=${queueItem.media?.contentId} contentUrl=${queueItem.media?.contentUrl} " +
+                    "contentType=${queueItem.media?.contentType}"
+            )
             return queueItem
         }
 
@@ -30,8 +37,15 @@ class LiveAwareMediaItemConverter(
             mediaInfo.customData?.let(::setCustomData)
         }.build()
 
+        debugLog(
+            "cast.queue.live",
+            "mediaId=${mediaItem.mediaId} sourceUri=${mediaItem.localConfiguration?.uri} " +
+                "castStreamUrl=$castStreamUrl contentId=${rebuiltMediaInfo.contentId} " +
+                "contentUrl=${rebuiltMediaInfo.contentUrl} contentType=${rebuiltMediaInfo.contentType}"
+        )
+
         return MediaQueueItem.Builder(rebuiltMediaInfo).apply {
-            setAutoplay(queueItem.autoplay)
+            setAutoplay(true)
             setStartTime(queueItem.startTime)
             setPreloadTime(queueItem.preloadTime)
             setPlaybackDuration(queueItem.playbackDuration)
@@ -56,6 +70,7 @@ class LiveAwareMediaItemConverter(
     }
 
     companion object {
+        private const val TAG = "TyfloCast"
         const val EXTRA_CAST_STREAM_URL: String = "cast_stream_url"
         const val EXTRA_CAST_MIME_TYPE: String = "cast_mime_type"
 
@@ -64,6 +79,10 @@ class LiveAwareMediaItemConverter(
                 putString(EXTRA_CAST_STREAM_URL, url)
                 putString(EXTRA_CAST_MIME_TYPE, mimeType)
             }
+        }
+
+        private fun debugLog(event: String, details: String) {
+            Log.d(TAG, "$event: $details")
         }
     }
 }

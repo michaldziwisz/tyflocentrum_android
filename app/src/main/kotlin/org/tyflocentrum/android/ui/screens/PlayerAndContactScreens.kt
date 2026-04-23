@@ -41,6 +41,7 @@ import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.StopCircle
 import androidx.compose.material.icons.filled.VolumeDown
+import androidx.compose.material.icons.filled.VolumeOff
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material.icons.outlined.Radio
@@ -363,6 +364,14 @@ fun PlayerScreen(
                                 IconButton(onClick = { appContainer.playerController.skipForward() }) {
                                     Icon(Icons.Filled.VolumeUp, contentDescription = "Przewiń do przodu 30 sekund")
                                 }
+                            }
+                            IconButton(
+                                onClick = { appContainer.playerController.toggleMute() }
+                            ) {
+                                Icon(
+                                    imageVector = if (playerState.isMuted) Icons.Filled.VolumeUp else Icons.Filled.VolumeOff,
+                                    contentDescription = if (playerState.isMuted) "Włącz dźwięk" else "Wycisz"
+                                )
                             }
                         }
 

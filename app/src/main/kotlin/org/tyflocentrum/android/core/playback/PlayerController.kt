@@ -20,6 +20,7 @@ import androidx.media3.session.MediaSession
 import androidx.media3.common.util.UnstableApi
 import androidx.core.content.ContextCompat
 import com.google.android.gms.cast.MediaError
+import com.google.android.gms.cast.MediaInfo
 import com.google.android.gms.cast.framework.CastContext
 import com.google.android.gms.cast.framework.CastSession
 import com.google.android.gms.cast.framework.SessionManagerListener
@@ -97,8 +98,11 @@ class PlayerController(
 
     private var settingsSnapshot = AppSettings()
     private var progressJob: Job? = null
-    private var castRecoveryJob: Job? = null
     private var lastResumeSaveAt: Long = 0
+    private var lastAudibleVolume = 1f
+    private var isMutedByUser = false
+    private var stopPlaybackAfterCastDisconnect = false
+    private var lastPlaybackType = player.deviceInfo.playbackType
     @Volatile
     private var mediaButtonOverride: ((Intent) -> Boolean)? = null
     private val castContext = runCatching { CastContext.getSharedInstance(appContext) }.getOrNull()
@@ -131,13 +135,11 @@ class PlayerController(
     private val castAvailabilityListener = object : SessionAvailabilityListener {
         override fun onCastSessionAvailable() {
             diagnostics.log("cast.session.available", describePlayerSnapshot())
-            attachRemoteMediaClient(castContext?.sessionManager?.currentCastSession)
-            scheduleLiveCastRecovery("sessionAvailable")
+            handleCastSessionReady("sessionAvailable", castContext?.sessionManager?.currentCastSession)
         }
 
         override fun onCastSessionUnavailable() {
             diagnostics.log("cast.session.unavailable", describePlayerSnapshot())
-            castRecoveryJob?.cancel()
             attachRemoteMediaClient(null)
         }
     }
@@ -148,24 +150,23 @@ class PlayerController(
 
         override fun onSessionStarted(session: CastSession, sessionId: String) {
             diagnostics.log("cast.session.started", "${describeSession(session)} sessionId=$sessionId")
-            attachRemoteMediaClient(session)
-            scheduleLiveCastRecovery("sessionStarted")
+            handleCastSessionReady("sessionStarted", session)
         }
 
         override fun onSessionStartFailed(session: CastSession, error: Int) {
             diagnostics.log("cast.session.startFailed", "${describeSession(session)} error=$error")
-            castRecoveryJob?.cancel()
             attachRemoteMediaClient(null)
         }
 
         override fun onSessionEnding(session: CastSession) {
             diagnostics.log("cast.session.ending", describeSession(session))
+            prepareForCastDisconnect("sessionEnding", session)
         }
 
         override fun onSessionEnded(session: CastSession, error: Int) {
             diagnostics.log("cast.session.ended", "${describeSession(session)} error=$error")
-            castRecoveryJob?.cancel()
             attachRemoteMediaClient(null)
+            finalizeCastDisconnectIfNeeded("sessionEnded")
         }
 
         override fun onSessionResuming(session: CastSession, sessionId: String) {
@@ -174,19 +175,18 @@ class PlayerController(
 
         override fun onSessionResumed(session: CastSession, wasSuspended: Boolean) {
             diagnostics.log("cast.session.resumed", "${describeSession(session)} suspended=$wasSuspended")
-            attachRemoteMediaClient(session)
-            scheduleLiveCastRecovery("sessionResumed")
+            handleCastSessionReady("sessionResumed", session)
         }
 
         override fun onSessionResumeFailed(session: CastSession, error: Int) {
             diagnostics.log("cast.session.resumeFailed", "${describeSession(session)} error=$error")
-            castRecoveryJob?.cancel()
             attachRemoteMediaClient(null)
+            stopPlaybackAfterCastDisconnect = false
         }
 
         override fun onSessionSuspended(session: CastSession, reason: Int) {
             diagnostics.log("cast.session.suspended", "${describeSession(session)} reason=$reason")
-            castRecoveryJob?.cancel()
+            stopPlaybackAfterCastDisconnect = false
         }
     }
 
@@ -207,12 +207,18 @@ class PlayerController(
 
                 override fun onIsPlayingChanged(isPlaying: Boolean) {
                     diagnostics.log("player.isPlaying", describePlayerSnapshot())
+                    if (isPlaying) {
+                        ensurePlaybackServiceRunningIfNeeded()
+                    }
                     updateUiState()
                 }
 
                 override fun onDeviceInfoChanged(deviceInfo: DeviceInfo) {
+                    val previousPlaybackType = lastPlaybackType
+                    lastPlaybackType = deviceInfo.playbackType
                     diagnostics.log("player.deviceInfo", describePlayerSnapshot())
                     updateUiState()
+                    handlePlaybackRouteTransition(previousPlaybackType, deviceInfo.playbackType)
                 }
 
                 override fun onPlayerError(error: PlaybackException) {
@@ -265,15 +271,11 @@ class PlayerController(
     ) {
         scope.launch {
             runCatching {
-                ensurePlaybackServiceRunning()
                 val sameUrl = _uiState.value.current?.url == request.url
                 val sameLoadedItem = sameUrl && hasLoadedMediaItemFor(request)
                 val shouldForceReloadLive = forceReloadLive ||
                     (request.isLive && sameLoadedItem && !isPlaybackPendingOrActive())
                 val sameItem = sameLoadedItem && !shouldForceReloadLive
-                if (!request.isLive) {
-                    castRecoveryJob?.cancel()
-                }
                 diagnostics.log(
                     "play.request",
                     "url=${request.url} live=${request.isLive} sameUrl=$sameUrl sameLoadedItem=$sameLoadedItem " +
@@ -286,6 +288,7 @@ class PlayerController(
                     else -> preferences.loadResumePosition(request.url)
                 } ?: C.TIME_UNSET
 
+                val preparedMediaItem = if (!sameItem) buildMediaItem(request) else null
                 if (!sameItem) {
                     if (player.currentMediaItem != null) {
                         if (player.isCommandAvailable(Player.COMMAND_STOP)) {
@@ -296,8 +299,7 @@ class PlayerController(
                         }
                     }
                     player.playWhenReady = true
-                    val mediaItem = buildMediaItem(request)
-                    player.setMediaItem(mediaItem, startPosition)
+                    player.setMediaItem(preparedMediaItem ?: buildMediaItem(request), startPosition)
                     mediaSession.setMediaButtonPreferences(buildMediaButtons(isLive = request.isLive))
                     player.prepare()
                     _uiState.value = _uiState.value.copy(current = request, errorMessage = null)
@@ -307,6 +309,7 @@ class PlayerController(
 
                 player.setPlaybackSpeed(resolvePlaybackRate(request))
                 player.playWhenReady = true
+                ensurePlaybackServiceRunningIfNeeded()
                 updateUiState()
                 diagnostics.log("play.applied", describePlayerSnapshot())
             }.onFailure { error ->
@@ -348,21 +351,50 @@ class PlayerController(
         val current = _uiState.value.current
         diagnostics.log("resume.request", describePlayerSnapshot())
         if (current?.isLive == true) {
+            if (player.isCastSessionAvailable && player.currentMediaItem != null) {
+                player.play()
+                ensurePlaybackServiceRunningIfNeeded()
+                updateUiState()
+                return
+            }
             playInternal(current)
             return
         }
-        ensurePlaybackServiceRunning()
         player.playWhenReady = true
+        ensurePlaybackServiceRunningIfNeeded()
         updateUiState()
     }
 
     fun pause() {
         diagnostics.log("pause.request", describePlayerSnapshot())
         if (_uiState.value.current?.isLive == true) {
+            if (player.isCastSessionAvailable && player.currentMediaItem != null) {
+                player.pause()
+                updateUiState()
+                return
+            }
             stopLivePlayback()
             return
         }
         player.pause()
+        updateUiState()
+    }
+
+    fun toggleMute() {
+        if (!isMutedByUser) {
+            val currentVolume = player.volume
+            if (currentVolume > MIN_AUDIBLE_VOLUME) {
+                lastAudibleVolume = currentVolume
+            }
+            player.volume = 0f
+            isMutedByUser = true
+        } else {
+            restoreAudibleVolume("toggleMute")
+        }
+        diagnostics.log(
+            "volume.toggleMute",
+            "volume=${player.volume} muted=$isMutedByUser remote=${player.isCastSessionAvailable} ${describePlayerSnapshot()}"
+        )
         updateUiState()
     }
 
@@ -443,10 +475,20 @@ class PlayerController(
     }
 
     private fun updateUiState() {
+        val currentRequest = syncCurrentRequest("uiState")
+        val currentVolume = player.volume
+        if (currentVolume > MIN_AUDIBLE_VOLUME) {
+            lastAudibleVolume = currentVolume
+            if (isMutedByUser) {
+                isMutedByUser = false
+            }
+        }
         val duration = player.duration.takeIf { it > 0 }
         _uiState.value = _uiState.value.copy(
+            current = currentRequest ?: _uiState.value.current,
             isPlaying = player.isPlaying,
             playWhenReady = player.playWhenReady,
+            isMuted = isMutedByUser,
             isBuffering = player.playbackState == Player.STATE_BUFFERING,
             isRemotePlayback = player.deviceInfo.playbackType == DeviceInfo.PLAYBACK_TYPE_REMOTE,
             durationMs = duration,
@@ -457,18 +499,32 @@ class PlayerController(
 
     fun release() {
         progressJob?.cancel()
-        castRecoveryJob?.cancel()
         castContext?.sessionManager?.removeSessionManagerListener(castSessionListener, CastSession::class.java)
         attachRemoteMediaClient(null)
         mediaSession.release()
         player.release()
     }
 
-    private fun ensurePlaybackServiceRunning() {
-        ContextCompat.startForegroundService(
-            appContext,
-            Intent(appContext, PlaybackService::class.java)
-        )
+    private fun ensurePlaybackServiceRunningIfNeeded() {
+        if (player.isCastSessionAvailable ||
+            player.deviceInfo.playbackType == DeviceInfo.PLAYBACK_TYPE_REMOTE ||
+            player.currentMediaItem == null ||
+            !(player.playWhenReady || player.isPlaying || player.playbackState == Player.STATE_BUFFERING)
+        ) {
+            return
+        }
+        if (!PlaybackService.markStartRequestedIfNeeded()) {
+            return
+        }
+        runCatching {
+            ContextCompat.startForegroundService(
+                appContext,
+                Intent(appContext, PlaybackService::class.java)
+            )
+        }.onFailure { error ->
+            PlaybackService.clearStartRequest()
+            throw error
+        }
     }
 
     private fun buildMediaButtons(isLive: Boolean): List<CommandButton> {
@@ -487,7 +543,6 @@ class PlayerController(
 
     private fun stopLivePlayback() {
         diagnostics.log("live.stop", describePlayerSnapshot())
-        castRecoveryJob?.cancel()
         player.playWhenReady = false
         if (player.currentMediaItem != null) {
             if (player.isCommandAvailable(Player.COMMAND_STOP)) {
@@ -530,7 +585,11 @@ class PlayerController(
 
     private companion object {
         const val SEEK_INCREMENT_MS = 30_000L
+        const val RADIO_SOURCE_STREAM_URL = "https://radio.tyflopodcast.net/hls/stream.m3u8"
         const val RADIO_CAST_STREAM_URL = "https://radio.tyflopodcast.net/"
+        const val RADIO_CAST_STREAM_MIME_TYPE = MimeTypes.AUDIO_MPEG
+        const val MIN_AUDIBLE_VOLUME = 0.01f
+        const val MIN_RESTORE_VOLUME = 0.25f
     }
 
     private suspend fun resolvePlaybackRate(request: PlayerRequest): Float {
@@ -542,7 +601,7 @@ class PlayerController(
         return PlaybackRatePolicy.normalized(preferredRate)
     }
 
-    private fun buildMediaItem(request: PlayerRequest): MediaItem {
+    private suspend fun buildMediaItem(request: PlayerRequest): MediaItem {
         val metadataBuilder = MediaMetadata.Builder()
             .setTitle(request.title)
             .setArtist(request.subtitle)
@@ -551,6 +610,7 @@ class PlayerController(
             .setUri(request.url)
             .apply {
                 if (request.isLive) {
+                    val (castStreamUrl, castStreamMimeType) = resolveLiveCastStreamTarget(request.url)
                     setMimeType(MimeTypes.APPLICATION_M3U8)
                     setLiveConfiguration(MediaItem.LiveConfiguration.Builder().build())
                     metadataBuilder
@@ -561,8 +621,8 @@ class PlayerController(
                         .setStation(request.title)
                     metadataBuilder.setExtras(
                         LiveAwareMediaItemConverter.castExtras(
-                            url = RADIO_CAST_STREAM_URL,
-                            mimeType = MimeTypes.AUDIO_MPEG
+                            url = castStreamUrl,
+                            mimeType = castStreamMimeType
                         )
                     )
                 } else if (request.url.endsWith(".m3u8", ignoreCase = true)) {
@@ -585,75 +645,265 @@ class PlayerController(
         return player.isPlaying || (player.playWhenReady && player.playbackState != Player.STATE_IDLE)
     }
 
-    private fun scheduleLiveCastRecovery(trigger: String) {
-        val request = _uiState.value.current?.takeIf { it.isLive } ?: return
-        if (!_uiState.value.playWhenReady) return
-        castRecoveryJob?.cancel()
-        castRecoveryJob = scope.launch {
-            val attemptDelaysMs = listOf(0L, 750L, 2_000L, 5_000L, 15_000L, 30_000L)
-            for ((index, waitMs) in attemptDelaysMs.withIndex()) {
-                if (waitMs > 0) delay(waitMs)
-                val currentRequest = _uiState.value.current
-                if (currentRequest?.url != request.url || currentRequest.isLive != true || !_uiState.value.playWhenReady) {
-                    diagnostics.log(
-                        "cast.recover.stop",
-                        "trigger=$trigger attempt=${index + 1} reason=requestChanged ${describePlayerSnapshot()}"
-                    )
-                    return@launch
-                }
-                if (!player.isCastSessionAvailable) {
-                    diagnostics.log(
-                        "cast.recover.stop",
-                        "trigger=$trigger attempt=${index + 1} reason=sessionUnavailable ${describePlayerSnapshot()}"
-                    )
-                    return@launch
-                }
+    private fun handleCastSessionReady(trigger: String, session: CastSession?) {
+        attachRemoteMediaClient(session)
+        val request = syncCurrentRequest("cast:$trigger") ?: return
+        if (request.isLive) {
+            ensureAudiblePlaybackOnCast(trigger)
+        }
+        maybeAutoStartOnCast(trigger, request)
+    }
 
-                attachRemoteMediaClient(castContext?.sessionManager?.currentCastSession)
-                runCatching { observedRemoteMediaClient?.requestStatus() }
-                val remoteReady = matchesActiveRemotePlayback(currentRequest, observedRemoteMediaClient)
-                diagnostics.log(
-                    "cast.recover.check",
-                    "trigger=$trigger attempt=${index + 1} ready=$remoteReady ${describePlayerSnapshot()} " +
-                        describeRemoteMediaClient(observedRemoteMediaClient)
-                )
-                if (remoteReady) {
-                    return@launch
-                }
-                if (index > 0) {
-                    diagnostics.log(
-                        "cast.recover.reload",
-                        "trigger=$trigger attempt=${index + 1} ${describePlayerSnapshot()}"
-                    )
-                    playInternal(
-                        currentRequest,
-                        forceReloadLive = true,
-                        origin = "castRecovery:$trigger:${index + 1}"
-                    )
-                }
-            }
-            diagnostics.log(
-                "cast.recover.timeout",
-                "trigger=$trigger ${describePlayerSnapshot()} ${describeRemoteMediaClient(observedRemoteMediaClient)}"
+    private fun syncCurrentRequest(reason: String): PlayerRequest? {
+        _uiState.value.current?.let { return it }
+        val recovered = recoverCurrentRequestFromMediaItem(player.currentMediaItem)
+            ?: recoverCurrentRequestFromRemoteMediaClient(observedRemoteMediaClient)
+            ?: return null
+        diagnostics.log(
+            "play.request.recover",
+            "reason=$reason url=${recovered.url} live=${recovered.isLive} title=${recovered.title}"
+        )
+        _uiState.value = _uiState.value.copy(current = recovered, errorMessage = null)
+        return recovered
+    }
+
+    private fun recoverCurrentRequestFromMediaItem(mediaItem: MediaItem?): PlayerRequest? {
+        mediaItem ?: return null
+        val metadata = mediaItem.mediaMetadata
+        val candidates = listOfNotNull(
+            mediaItem.localConfiguration?.uri?.toString(),
+            mediaItem.requestMetadata.mediaUri?.toString(),
+            mediaItem.mediaId.takeIf { it.isNotBlank() },
+            metadata.extras?.getString(LiveAwareMediaItemConverter.EXTRA_CAST_STREAM_URL)
+        )
+        val isLive = mediaItem.liveConfiguration != MediaItem.LiveConfiguration.UNSET
+        if (isTyfloRadioRequest(candidates, isLive, metadata)) {
+            return buildRecoveredRadioRequest(
+                titleHint = metadata.title?.toString(),
+                subtitleHint = metadata.artist?.toString()
             )
         }
+        val sourceUrl = candidates.firstOrNull { it.isNotBlank() } ?: return null
+        return PlayerRequest(
+            url = sourceUrl,
+            title = metadata.title?.toString()?.takeIf { it.isNotBlank() } ?: sourceUrl,
+            subtitle = metadata.artist?.toString()?.takeIf { it.isNotBlank() },
+            isLive = isLive
+        )
+    }
+
+    private fun recoverCurrentRequestFromRemoteMediaClient(
+        remoteClient: RemoteMediaClient?
+    ): PlayerRequest? {
+        val mediaInfo = remoteClient?.mediaInfo ?: return null
+        val candidates = listOfNotNull(mediaInfo.contentUrl, mediaInfo.contentId)
+        val isLive = mediaInfo.streamType == MediaInfo.STREAM_TYPE_LIVE
+        if (isTyfloRadioRequest(candidates, isLive, null)) {
+            return buildRecoveredRadioRequest(
+                titleHint = mediaInfo.metadata
+                    ?.getString(com.google.android.gms.cast.MediaMetadata.KEY_TITLE),
+                subtitleHint = mediaInfo.metadata
+                    ?.getString(com.google.android.gms.cast.MediaMetadata.KEY_SUBTITLE)
+            )
+        }
+        val sourceUrl = candidates.firstOrNull { it.isNotBlank() } ?: return null
+        return PlayerRequest(
+            url = sourceUrl,
+            title = mediaInfo.metadata
+                ?.getString(com.google.android.gms.cast.MediaMetadata.KEY_TITLE)
+                ?.takeIf { it.isNotBlank() }
+                ?: sourceUrl,
+            subtitle = mediaInfo.metadata
+                ?.getString(com.google.android.gms.cast.MediaMetadata.KEY_SUBTITLE)
+                ?.takeIf { it.isNotBlank() },
+            isLive = isLive
+        )
+    }
+
+    private fun isTyfloRadioRequest(
+        candidates: List<String>,
+        isLive: Boolean,
+        metadata: MediaMetadata?
+    ): Boolean {
+        if (candidates.any(::matchesTyfloRadioUrl)) {
+            return true
+        }
+        if (!isLive) {
+            return false
+        }
+        if (metadata?.mediaType == MediaMetadata.MEDIA_TYPE_RADIO_STATION) {
+            return true
+        }
+        val labels = listOfNotNull(
+            metadata?.title?.toString(),
+            metadata?.artist?.toString(),
+            metadata?.albumTitle?.toString(),
+            metadata?.station?.toString()
+        )
+        return labels.any { it.contains("tyfloradio", ignoreCase = true) }
+    }
+
+    private fun buildRecoveredRadioRequest(
+        titleHint: String?,
+        subtitleHint: String?
+    ): PlayerRequest {
+        return PlayerRequest(
+            url = RADIO_SOURCE_STREAM_URL,
+            title = titleHint?.takeIf { it.isNotBlank() } ?: "Tyfloradio",
+            subtitle = subtitleHint?.takeIf { it.isNotBlank() },
+            isLive = true
+        )
+    }
+
+    private fun maybeAutoStartOnCast(trigger: String, request: PlayerRequest) {
+        if (!player.isCastSessionAvailable) return
+        attachRemoteMediaClient(castContext?.sessionManager?.currentCastSession)
+        runCatching { observedRemoteMediaClient?.requestStatus() }
+        val remoteReady = matchesActiveRemotePlayback(request, observedRemoteMediaClient)
+        diagnostics.log(
+            "cast.autoplay",
+            "trigger=$trigger target=${request.url} live=${request.isLive} " +
+                "sameItem=${hasLoadedMediaItemFor(request)} remoteReady=$remoteReady ${describePlayerSnapshot()}"
+        )
+        if (!remoteReady) {
+            resetStaleRemotePlayback(trigger, request, observedRemoteMediaClient)
+            playInternal(
+                request,
+                forceReloadLive = request.isLive,
+                origin = "castAutoplay:$trigger"
+            )
+            return
+        }
+        player.playWhenReady = true
+        player.play()
+        updateUiState()
     }
 
     private fun matchesActiveRemotePlayback(
         request: PlayerRequest,
         remoteClient: RemoteMediaClient?
     ): Boolean {
-        if (!request.isLive || remoteClient == null || !remoteClient.hasMediaSession()) {
+        if (remoteClient == null || !remoteClient.hasMediaSession()) {
             return false
         }
-        val expectedContentId = RADIO_CAST_STREAM_URL
+        val expectedUrls = if (request.isLive) {
+            listOf(RADIO_CAST_STREAM_URL)
+        } else {
+            listOf(request.url)
+        }
         val actualContentId = remoteClient.mediaInfo?.contentId
-        if (actualContentId != expectedContentId) {
+        val actualContentUrl = remoteClient.mediaInfo?.contentUrl
+        val matchesRequestedStream = listOfNotNull(actualContentId, actualContentUrl)
+            .any { candidate ->
+                expectedUrls.any { expectedUrl ->
+                    normalizeStreamUrl(candidate) == normalizeStreamUrl(expectedUrl)
+                }
+            }
+        if (!matchesRequestedStream) {
             return false
         }
         return remoteClient.isPlaying ||
+            remoteClient.isPaused ||
             remoteClient.isBuffering ||
             remoteClient.playerState == 5
+    }
+
+    private fun resetStaleRemotePlayback(
+        trigger: String,
+        request: PlayerRequest,
+        remoteClient: RemoteMediaClient?
+    ) {
+        if (remoteClient == null || !remoteClient.hasMediaSession()) return
+        val actualContent = remoteClient.mediaInfo?.contentUrl
+            ?: remoteClient.mediaInfo?.contentId
+            ?: return
+        diagnostics.log(
+            "cast.remote.reset",
+            "trigger=$trigger target=${request.url} actual=$actualContent " +
+                describeRemoteMediaClient(remoteClient)
+        )
+        runCatching { remoteClient.stop() }
+    }
+
+    private fun prepareForCastDisconnect(trigger: String, session: CastSession?) {
+        val shouldStopPlayback = player.deviceInfo.playbackType == DeviceInfo.PLAYBACK_TYPE_REMOTE ||
+            _uiState.value.isRemotePlayback ||
+            player.currentMediaItem != null
+        stopPlaybackAfterCastDisconnect = shouldStopPlayback
+        diagnostics.log(
+            "cast.disconnect.prepare",
+            "trigger=$trigger shouldStop=$shouldStopPlayback ${describeSession(session)} ${describePlayerSnapshot()}"
+        )
+        runCatching { session?.remoteMediaClient?.stop() }
+    }
+
+    private fun finalizeCastDisconnectIfNeeded(trigger: String) {
+        if (!stopPlaybackAfterCastDisconnect) return
+        stopPlaybackAfterCastDisconnect = false
+        diagnostics.log(
+            "cast.disconnect.finalize",
+            "trigger=$trigger ${describePlayerSnapshot()}"
+        )
+        player.playWhenReady = false
+        if (player.currentMediaItem != null) {
+            if (player.isCommandAvailable(Player.COMMAND_STOP)) {
+                player.stop()
+            }
+            if (player.isCommandAvailable(Player.COMMAND_CHANGE_MEDIA_ITEMS)) {
+                player.clearMediaItems()
+            }
+        }
+        updateUiState()
+    }
+
+    private fun handlePlaybackRouteTransition(previousPlaybackType: Int, currentPlaybackType: Int) {
+        val movedFromRemoteToLocal =
+            previousPlaybackType == DeviceInfo.PLAYBACK_TYPE_REMOTE &&
+                currentPlaybackType != DeviceInfo.PLAYBACK_TYPE_REMOTE
+        if (!movedFromRemoteToLocal) return
+        if (stopPlaybackAfterCastDisconnect) {
+            finalizeCastDisconnectIfNeeded("deviceInfoChanged")
+            return
+        }
+        if (castContext?.sessionManager?.currentCastSession != null) {
+            diagnostics.log(
+                "cast.disconnect.defer",
+                "reason=sessionStillPresent ${describePlayerSnapshot()}"
+            )
+            return
+        }
+        stopPlaybackAfterCastDisconnect = true
+        finalizeCastDisconnectIfNeeded("deviceInfoChanged")
+    }
+
+    private fun resolveLiveCastStreamTarget(sourceUrl: String): Pair<String, String> {
+        diagnostics.log(
+            "cast.stream.resolve",
+            "source=$sourceUrl castUrl=$RADIO_CAST_STREAM_URL mime=$RADIO_CAST_STREAM_MIME_TYPE"
+        )
+        return RADIO_CAST_STREAM_URL to RADIO_CAST_STREAM_MIME_TYPE
+    }
+
+    private fun ensureAudiblePlaybackOnCast(trigger: String) {
+        val shouldRestore = isMutedByUser || player.volume <= MIN_AUDIBLE_VOLUME
+        if (!shouldRestore) {
+            diagnostics.log(
+                "cast.volume.keep",
+                "trigger=$trigger volume=${player.volume} ${describePlayerSnapshot()}"
+            )
+            return
+        }
+        restoreAudibleVolume("cast:$trigger")
+    }
+
+    private fun restoreAudibleVolume(reason: String) {
+        val restoredVolume = lastAudibleVolume.coerceIn(MIN_RESTORE_VOLUME, 1f)
+        player.volume = restoredVolume
+        isMutedByUser = false
+        diagnostics.log(
+            "volume.restore",
+            "reason=$reason volume=${player.volume} remote=${player.isCastSessionAvailable} ${describePlayerSnapshot()}"
+        )
     }
 
     private fun attachRemoteMediaClient(session: CastSession?) {
@@ -751,6 +1001,16 @@ class PlayerController(
             5 -> "LOADING"
             else -> state.toString()
         }
+    }
+
+    private fun normalizeStreamUrl(url: String): String {
+        return url.trim().removeSuffix("/")
+    }
+
+    private fun matchesTyfloRadioUrl(url: String): Boolean {
+        val normalized = normalizeStreamUrl(url)
+        return normalized == normalizeStreamUrl(RADIO_SOURCE_STREAM_URL) ||
+            normalized == normalizeStreamUrl(RADIO_CAST_STREAM_URL)
     }
 
     private fun Intent.mediaButtonKeyEvent(): KeyEvent? {

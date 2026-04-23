@@ -8,11 +8,38 @@ import org.tyflocentrum.android.TyflocentrumApplication
 
 @UnstableApi
 class PlaybackService : MediaSessionService() {
+    companion object {
+        @Volatile
+        private var running = false
+
+        @Volatile
+        private var startRequested = false
+
+        fun markStartRequestedIfNeeded(): Boolean = synchronized(this) {
+            if (running || startRequested) {
+                false
+            } else {
+                startRequested = true
+                true
+            }
+        }
+
+        fun clearStartRequest() {
+            synchronized(this) {
+                startRequested = false
+            }
+        }
+    }
+
     private val playerController: PlayerController
         get() = (application as TyflocentrumApplication).appContainer.playerController
 
     override fun onCreate() {
         super.onCreate()
+        synchronized(Companion) {
+            running = true
+            startRequested = false
+        }
         addSession(playerController.mediaSession)
     }
 
@@ -24,5 +51,13 @@ class PlaybackService : MediaSessionService() {
         if (!isPlaybackOngoing) {
             stopSelf()
         }
+    }
+
+    override fun onDestroy() {
+        synchronized(Companion) {
+            running = false
+            startRequested = false
+        }
+        super.onDestroy()
     }
 }
