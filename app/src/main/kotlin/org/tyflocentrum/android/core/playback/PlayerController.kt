@@ -142,7 +142,10 @@ class PlayerController(
         scope.launch {
             runCatching {
                 ensurePlaybackServiceRunning()
-                val sameItem = _uiState.value.current?.url == request.url && hasLoadedMediaItemFor(request)
+                val sameUrl = _uiState.value.current?.url == request.url
+                val sameLoadedItem = sameUrl && hasLoadedMediaItemFor(request)
+                val shouldForceReloadLive = request.isLive && sameLoadedItem && !player.isPlaying
+                val sameItem = sameLoadedItem && !shouldForceReloadLive
                 val startPosition = when {
                     request.isLive -> C.TIME_UNSET
                     request.initialSeekMs != null -> request.initialSeekMs
@@ -196,12 +199,12 @@ class PlayerController(
     }
 
     fun resume() {
-        ensurePlaybackServiceRunning()
-        if (_uiState.value.current?.isLive == true &&
-            player.isCommandAvailable(Player.COMMAND_SEEK_TO_DEFAULT_POSITION)
-        ) {
-            player.seekToDefaultPosition()
+        val current = _uiState.value.current
+        if (current?.isLive == true) {
+            play(current)
+            return
         }
+        ensurePlaybackServiceRunning()
         player.playWhenReady = true
         updateUiState()
     }
