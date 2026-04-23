@@ -9,6 +9,7 @@ import org.tyflocentrum.android.BuildConfig
 import org.tyflocentrum.android.core.network.ContactApiService
 import org.tyflocentrum.android.core.network.TyfloRepository
 import org.tyflocentrum.android.core.network.WpApiService
+import org.tyflocentrum.android.core.playback.CastDiagnosticsLogger
 import org.tyflocentrum.android.core.playback.PlayerController
 import org.tyflocentrum.android.core.storage.AppPreferencesRepository
 import retrofit2.Retrofit
@@ -64,8 +65,11 @@ class AppContainer(
         contactApi = contactApi
     )
 
+    val castDiagnostics = CastDiagnosticsLogger()
+
     val playerController = PlayerController(
         context = application,
-        preferences = preferencesRepository
+        preferences = preferencesRepository,
+        diagnostics = castDiagnostics
     )
 }

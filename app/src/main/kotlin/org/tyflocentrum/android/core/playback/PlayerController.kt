@@ -18,6 +18,11 @@ import androidx.media3.session.CommandButton
 import androidx.media3.session.MediaSession
 import androidx.media3.common.util.UnstableApi
 import androidx.core.content.ContextCompat
+import com.google.android.gms.cast.MediaError
+import com.google.android.gms.cast.framework.CastContext
+import com.google.android.gms.cast.framework.CastSession
+import com.google.android.gms.cast.framework.SessionManagerListener
+import com.google.android.gms.cast.framework.media.RemoteMediaClient
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -39,7 +44,8 @@ import org.tyflocentrum.android.core.storage.AppPreferencesRepository
 @UnstableApi
 class PlayerController(
     context: Context,
-    private val preferences: AppPreferencesRepository
+    private val preferences: AppPreferencesRepository,
+    private val diagnostics: CastDiagnosticsLogger
 ) {
     private val appContext = context.applicationContext
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -93,11 +99,82 @@ class PlayerController(
     private var lastResumeSaveAt: Long = 0
     @Volatile
     private var mediaButtonOverride: ((Intent) -> Boolean)? = null
+    private val castContext = runCatching { CastContext.getSharedInstance(appContext) }.getOrNull()
+    private var observedRemoteMediaClient: RemoteMediaClient? = null
+    private val remoteMediaClientCallback = object : RemoteMediaClient.Callback() {
+        override fun onStatusUpdated() {
+            diagnostics.log("cast.remote.status", describeRemoteMediaClient(observedRemoteMediaClient))
+        }
+
+        override fun onMetadataUpdated() {
+            diagnostics.log("cast.remote.metadata", describeRemoteMediaClient(observedRemoteMediaClient))
+        }
+
+        override fun onQueueStatusUpdated() {
+            diagnostics.log("cast.remote.queue", describeRemoteMediaClient(observedRemoteMediaClient))
+        }
+
+        override fun onPreloadStatusUpdated() {
+            diagnostics.log("cast.remote.preload", describeRemoteMediaClient(observedRemoteMediaClient))
+        }
+
+        override fun onSendingRemoteMediaRequest() {
+            diagnostics.log("cast.remote.request", describeRemoteMediaClient(observedRemoteMediaClient))
+        }
+
+        override fun onMediaError(error: MediaError) {
+            diagnostics.log("cast.remote.error", error.toString())
+        }
+    }
+    private val castSessionListener = object : SessionManagerListener<CastSession> {
+        override fun onSessionStarting(session: CastSession) {
+            diagnostics.log("cast.session.starting", describeSession(session))
+        }
+
+        override fun onSessionStarted(session: CastSession, sessionId: String) {
+            diagnostics.log("cast.session.started", "${describeSession(session)} sessionId=$sessionId")
+            attachRemoteMediaClient(session)
+        }
+
+        override fun onSessionStartFailed(session: CastSession, error: Int) {
+            diagnostics.log("cast.session.startFailed", "${describeSession(session)} error=$error")
+            attachRemoteMediaClient(null)
+        }
+
+        override fun onSessionEnding(session: CastSession) {
+            diagnostics.log("cast.session.ending", describeSession(session))
+        }
+
+        override fun onSessionEnded(session: CastSession, error: Int) {
+            diagnostics.log("cast.session.ended", "${describeSession(session)} error=$error")
+            attachRemoteMediaClient(null)
+        }
+
+        override fun onSessionResuming(session: CastSession, sessionId: String) {
+            diagnostics.log("cast.session.resuming", "${describeSession(session)} sessionId=$sessionId")
+        }
+
+        override fun onSessionResumed(session: CastSession, wasSuspended: Boolean) {
+            diagnostics.log("cast.session.resumed", "${describeSession(session)} suspended=$wasSuspended")
+            attachRemoteMediaClient(session)
+        }
+
+        override fun onSessionResumeFailed(session: CastSession, error: Int) {
+            diagnostics.log("cast.session.resumeFailed", "${describeSession(session)} error=$error")
+            attachRemoteMediaClient(null)
+        }
+
+        override fun onSessionSuspended(session: CastSession, reason: Int) {
+            diagnostics.log("cast.session.suspended", "${describeSession(session)} reason=$reason")
+        }
+    }
 
     init {
+        diagnostics.log("player.init", describePlayerSnapshot())
         player.addListener(
             object : Player.Listener {
                 override fun onPlaybackStateChanged(playbackState: Int) {
+                    diagnostics.log("player.playbackState", describePlayerSnapshot())
                     updateUiState()
                     if (playbackState == Player.STATE_ENDED) {
                         _uiState.value.current?.takeIf { !it.isLive }?.let { request ->
@@ -107,18 +184,35 @@ class PlayerController(
                 }
 
                 override fun onIsPlayingChanged(isPlaying: Boolean) {
+                    diagnostics.log("player.isPlaying", describePlayerSnapshot())
                     updateUiState()
                 }
 
                 override fun onDeviceInfoChanged(deviceInfo: DeviceInfo) {
+                    diagnostics.log("player.deviceInfo", describePlayerSnapshot())
                     updateUiState()
                 }
 
                 override fun onPlayerError(error: PlaybackException) {
+                    diagnostics.log(
+                        "player.error",
+                        "${describePlayerSnapshot()} message=${error.localizedMessage ?: error.message ?: "unknown"}"
+                    )
                     _uiState.value = _uiState.value.copy(
                         errorMessage = error.localizedMessage ?: "Nie udało się odtworzyć materiału."
                     )
                 }
+            }
+        )
+
+        castContext?.sessionManager?.addSessionManagerListener(castSessionListener, CastSession::class.java)
+        attachRemoteMediaClient(castContext?.sessionManager?.currentCastSession)
+        diagnostics.log(
+            "cast.context",
+            if (castContext == null) {
+                "unavailable"
+            } else {
+                "ready state=${castContext.castState}"
             }
         )
 
@@ -146,6 +240,11 @@ class PlayerController(
                 val sameLoadedItem = sameUrl && hasLoadedMediaItemFor(request)
                 val shouldForceReloadLive = request.isLive && sameLoadedItem && !player.isPlaying
                 val sameItem = sameLoadedItem && !shouldForceReloadLive
+                diagnostics.log(
+                    "play.request",
+                    "url=${request.url} live=${request.isLive} sameUrl=$sameUrl sameLoadedItem=$sameLoadedItem " +
+                        "forceReloadLive=$shouldForceReloadLive ${describePlayerSnapshot()}"
+                )
                 val startPosition = when {
                     request.isLive -> C.TIME_UNSET
                     request.initialSeekMs != null -> request.initialSeekMs
@@ -175,7 +274,13 @@ class PlayerController(
                 player.setPlaybackSpeed(resolvePlaybackRate(request))
                 player.playWhenReady = true
                 updateUiState()
+                diagnostics.log("play.applied", describePlayerSnapshot())
             }.onFailure { error ->
+                diagnostics.log(
+                    "play.failure",
+                    "url=${request.url} ${describePlayerSnapshot()} " +
+                        "message=${error.localizedMessage ?: error.message ?: "unknown"}"
+                )
                 _uiState.value = _uiState.value.copy(
                     current = request,
                     isPlaying = false,
@@ -187,6 +292,10 @@ class PlayerController(
     }
 
     fun togglePlayPause(request: PlayerRequest) {
+        diagnostics.log(
+            "togglePlayPause",
+            "target=${request.url} hasLoaded=${hasLoadedMediaItemFor(request)} ${describePlayerSnapshot()}"
+        )
         if (_uiState.value.current?.url == request.url && player.currentMediaItem != null) {
             if (player.isPlaying) {
                 pause()
@@ -200,6 +309,7 @@ class PlayerController(
 
     fun resume() {
         val current = _uiState.value.current
+        diagnostics.log("resume.request", describePlayerSnapshot())
         if (current?.isLive == true) {
             play(current)
             return
@@ -210,6 +320,7 @@ class PlayerController(
     }
 
     fun pause() {
+        diagnostics.log("pause.request", describePlayerSnapshot())
         if (_uiState.value.current?.isLive == true) {
             stopLivePlayback()
             return
@@ -308,6 +419,8 @@ class PlayerController(
 
     fun release() {
         progressJob?.cancel()
+        castContext?.sessionManager?.removeSessionManagerListener(castSessionListener, CastSession::class.java)
+        attachRemoteMediaClient(null)
         mediaSession.release()
         player.release()
     }
@@ -334,6 +447,7 @@ class PlayerController(
     }
 
     private fun stopLivePlayback() {
+        diagnostics.log("live.stop", describePlayerSnapshot())
         player.playWhenReady = false
         if (player.currentMediaItem != null) {
             if (player.isCommandAvailable(Player.COMMAND_STOP)) {
@@ -350,6 +464,10 @@ class PlayerController(
         val current = _uiState.value.current?.takeIf { it.isLive } ?: return false
         val keyEvent = intent.mediaButtonKeyEvent() ?: return false
         if (!keyEvent.isLivePlaybackControlKey()) return false
+        diagnostics.log(
+            "live.mediaButton",
+            "keyCode=${keyEvent.keyCode} action=${keyEvent.action} repeat=${keyEvent.repeatCount} ${describePlayerSnapshot()}"
+        )
         return when (keyEvent.action) {
             KeyEvent.ACTION_DOWN -> {
                 if (keyEvent.repeatCount == 0) {
@@ -421,6 +539,103 @@ class PlayerController(
             ?: currentItem.requestMetadata.mediaUri?.toString()
             ?: currentItem.mediaId.takeIf { it.isNotBlank() }
         return currentUrl == request.url
+    }
+
+    private fun attachRemoteMediaClient(session: CastSession?) {
+        val newClient = session?.remoteMediaClient
+        if (observedRemoteMediaClient === newClient) return
+        observedRemoteMediaClient?.unregisterCallback(remoteMediaClientCallback)
+        observedRemoteMediaClient = newClient
+        newClient?.registerCallback(remoteMediaClientCallback)
+        diagnostics.log(
+            "cast.remote.attach",
+            "${describeSession(session)} ${describeRemoteMediaClient(newClient)}"
+        )
+    }
+
+    private fun describePlayerSnapshot(): String {
+        val currentItem = player.currentMediaItem
+        val currentItemUrl = currentItem?.localConfiguration?.uri?.toString()
+            ?: currentItem?.requestMetadata?.mediaUri?.toString()
+            ?: currentItem?.mediaId
+            ?: "-"
+        val currentRequestUrl = _uiState.value.current?.url ?: "-"
+        return buildString {
+            append("remote=")
+            append(player.deviceInfo.playbackType == DeviceInfo.PLAYBACK_TYPE_REMOTE)
+            append(" castSession=")
+            append(player.isCastSessionAvailable)
+            append(" isPlaying=")
+            append(player.isPlaying)
+            append(" playWhenReady=")
+            append(player.playWhenReady)
+            append(" playbackState=")
+            append(playbackStateName(player.playbackState))
+            append(" currentRequest=")
+            append(currentRequestUrl)
+            append(" currentItem=")
+            append(currentItemUrl)
+        }
+    }
+
+    private fun describeSession(session: CastSession?): String {
+        if (session == null) return "session=none"
+        val deviceName = session.castDevice?.friendlyName ?: "unknown"
+        return "session=device($deviceName)"
+    }
+
+    private fun describeRemoteMediaClient(client: RemoteMediaClient?): String {
+        if (client == null) return "remoteClient=none"
+        return runCatching {
+            buildString {
+                append("remoteClient{")
+                append("hasMediaSession=")
+                append(client.hasMediaSession())
+                append(", isLive=")
+                append(client.isLiveStream)
+                append(", isPlaying=")
+                append(client.isPlaying)
+                append(", isPaused=")
+                append(client.isPaused)
+                append(", isBuffering=")
+                append(client.isBuffering)
+                append(", playerState=")
+                append(castPlayerStateName(client.playerState))
+                append(", idleReason=")
+                append(client.idleReason)
+                append(", positionMs=")
+                append(client.approximateStreamPosition)
+                append(", media=")
+                append(client.mediaInfo?.contentId ?: "-")
+                append("}")
+            }
+        }.getOrElse { error ->
+            "remoteClient=error(${error.javaClass.simpleName}:${error.message})"
+        }
+    }
+
+    private fun playbackStateName(state: Int): String {
+        return when (state) {
+            Player.STATE_IDLE -> "IDLE"
+            Player.STATE_BUFFERING -> "BUFFERING"
+            Player.STATE_READY -> "READY"
+            Player.STATE_ENDED -> "ENDED"
+            else -> state.toString()
+        }
+    }
+
+    private fun castPlayerStateName(state: Int): String {
+        return when (state) {
+            RemoteMediaClient.STATUS_SUCCEEDED -> "STATUS_SUCCEEDED"
+            RemoteMediaClient.STATUS_FAILED -> "STATUS_FAILED"
+            RemoteMediaClient.STATUS_REPLACED -> "STATUS_REPLACED"
+            1 -> "IDLE"
+            2 -> "PLAYING"
+            3 -> "PAUSED"
+            4 -> "BUFFERING"
+            5 -> "LOADING"
+            else -> state.toString()
+        }
     }
 
     private fun Intent.mediaButtonKeyEvent(): KeyEvent? {

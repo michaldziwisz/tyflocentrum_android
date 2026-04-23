@@ -44,6 +44,7 @@ import androidx.core.net.toUri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import kotlinx.coroutines.launch
+import org.tyflocentrum.android.BuildConfig
 import org.tyflocentrum.android.core.model.AppSettings
 import org.tyflocentrum.android.core.model.ContactDraft
 import org.tyflocentrum.android.core.model.FavoriteArticleOrigin
@@ -493,6 +494,7 @@ fun SettingsScreen(
     navController: NavHostController
 ) {
     val appContainer = LocalAppContainer.current
+    val context = LocalContext.current
     val settings by appContainer.preferencesRepository.settingsFlow.collectAsStateWithLifecycle(AppSettings())
     val scope = rememberCoroutineScope()
 
@@ -582,6 +584,33 @@ fun SettingsScreen(
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+
+            if (BuildConfig.DEBUG) {
+                Text(text = "Diagnostyka Cast", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                Text(
+                    text = "Odtwórz problem z Chromecastem, a potem udostępnij log z tej sekcji.",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Button(
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = {
+                        shareText(
+                            context = context,
+                            text = appContainer.castDiagnostics.snapshot(),
+                            subject = "Log Cast Tyflocentrum"
+                        )
+                    }
+                ) {
+                    Text("Udostępnij log Cast")
+                }
+                Button(
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = { appContainer.castDiagnostics.clear() }
+                ) {
+                    Text("Wyczyść log Cast")
+                }
+            }
         }
     }
 }
