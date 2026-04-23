@@ -42,7 +42,7 @@ class CastDiagnosticsLogger {
 
     private companion object {
         private const val TAG = "TyfloCast"
-        private const val MAX_ENTRIES = 250
+        private const val MAX_ENTRIES = 500
         private val TIMESTAMP_FORMATTER = DateTimeFormatter.ofPattern("HH:mm:ss.SSS", Locale.US)
     }
 

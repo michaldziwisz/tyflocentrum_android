@@ -2,6 +2,7 @@ package org.tyflocentrum.android.core.playback
 
 import android.content.Context
 import android.content.Intent
+import android.os.SystemClock
 import android.view.KeyEvent
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
@@ -99,6 +100,8 @@ class PlayerController(
     private var progressJob: Job? = null
     private var castRecoveryJob: Job? = null
     private var lastResumeSaveAt: Long = 0
+    private var nextCastStartupTraceId: Int = 1
+    private var castStartupTrace: CastStartupTrace? = null
     @Volatile
     private var mediaButtonOverride: ((Intent) -> Boolean)? = null
     private val castContext = runCatching { CastContext.getSharedInstance(appContext) }.getOrNull()
@@ -106,10 +109,12 @@ class PlayerController(
     private val remoteMediaClientCallback = object : RemoteMediaClient.Callback() {
         override fun onStatusUpdated() {
             diagnostics.log("cast.remote.status", describeRemoteMediaClient(observedRemoteMediaClient))
+            updateCastStartupTraceFromRemoteClient("status")
         }
 
         override fun onMetadataUpdated() {
             diagnostics.log("cast.remote.metadata", describeRemoteMediaClient(observedRemoteMediaClient))
+            updateCastStartupTraceFromRemoteClient("metadata")
         }
 
         override fun onQueueStatusUpdated() {
@@ -130,7 +135,9 @@ class PlayerController(
     }
     private val castAvailabilityListener = object : SessionAvailabilityListener {
         override fun onCastSessionAvailable() {
+            ensureCastStartupTrace("sessionAvailable")
             diagnostics.log("cast.session.available", describePlayerSnapshot())
+            markCastStartupTrace("sessionAvailable")
             attachRemoteMediaClient(castContext?.sessionManager?.currentCastSession)
             scheduleLiveCastRecovery("sessionAvailable")
         }
@@ -138,16 +145,21 @@ class PlayerController(
         override fun onCastSessionUnavailable() {
             diagnostics.log("cast.session.unavailable", describePlayerSnapshot())
             castRecoveryJob?.cancel()
+            finishCastStartupTrace("sessionUnavailable")
             attachRemoteMediaClient(null)
         }
     }
     private val castSessionListener = object : SessionManagerListener<CastSession> {
         override fun onSessionStarting(session: CastSession) {
+            ensureCastStartupTrace("sessionStarting")
             diagnostics.log("cast.session.starting", describeSession(session))
+            markCastStartupTrace("sessionStarting", "device=${session.castDevice?.friendlyName ?: "unknown"}")
         }
 
         override fun onSessionStarted(session: CastSession, sessionId: String) {
+            ensureCastStartupTrace("sessionStarted")
             diagnostics.log("cast.session.started", "${describeSession(session)} sessionId=$sessionId")
+            markCastStartupTrace("sessionStarted", "sessionId=$sessionId")
             attachRemoteMediaClient(session)
             scheduleLiveCastRecovery("sessionStarted")
         }
@@ -155,6 +167,7 @@ class PlayerController(
         override fun onSessionStartFailed(session: CastSession, error: Int) {
             diagnostics.log("cast.session.startFailed", "${describeSession(session)} error=$error")
             castRecoveryJob?.cancel()
+            finishCastStartupTrace("sessionStartFailed", "error=$error")
             attachRemoteMediaClient(null)
         }
 
@@ -165,6 +178,7 @@ class PlayerController(
         override fun onSessionEnded(session: CastSession, error: Int) {
             diagnostics.log("cast.session.ended", "${describeSession(session)} error=$error")
             castRecoveryJob?.cancel()
+            finishCastStartupTrace("sessionEnded", "error=$error")
             attachRemoteMediaClient(null)
         }
 
@@ -173,7 +187,9 @@ class PlayerController(
         }
 
         override fun onSessionResumed(session: CastSession, wasSuspended: Boolean) {
+            ensureCastStartupTrace("sessionResumed")
             diagnostics.log("cast.session.resumed", "${describeSession(session)} suspended=$wasSuspended")
+            markCastStartupTrace("sessionResumed", "suspended=$wasSuspended")
             attachRemoteMediaClient(session)
             scheduleLiveCastRecovery("sessionResumed")
         }
@@ -181,12 +197,14 @@ class PlayerController(
         override fun onSessionResumeFailed(session: CastSession, error: Int) {
             diagnostics.log("cast.session.resumeFailed", "${describeSession(session)} error=$error")
             castRecoveryJob?.cancel()
+            finishCastStartupTrace("sessionResumeFailed", "error=$error")
             attachRemoteMediaClient(null)
         }
 
         override fun onSessionSuspended(session: CastSession, reason: Int) {
             diagnostics.log("cast.session.suspended", "${describeSession(session)} reason=$reason")
             castRecoveryJob?.cancel()
+            finishCastStartupTrace("sessionSuspended", "reason=$reason")
         }
     }
 
@@ -279,6 +297,12 @@ class PlayerController(
                     "url=${request.url} live=${request.isLive} sameUrl=$sameUrl sameLoadedItem=$sameLoadedItem " +
                         "forceReloadLive=$shouldForceReloadLive origin=$origin ${describePlayerSnapshot()}"
                 )
+                if (request.isLive && (player.isCastSessionAvailable || castContext?.sessionManager?.currentCastSession != null)) {
+                    startCastStartupTrace(request, origin)
+                    markCastStartupTrace("playRequested", "origin=$origin")
+                } else if (!request.isLive) {
+                    finishCastStartupTrace("nonLivePlayRequested", "url=${request.url}")
+                }
                 val startPosition = when {
                     request.isLive -> C.TIME_UNSET
                     request.initialSeekMs != null -> request.initialSeekMs
@@ -310,6 +334,12 @@ class PlayerController(
                 updateUiState()
                 diagnostics.log("play.applied", describePlayerSnapshot())
             }.onFailure { error ->
+                if (request.isLive) {
+                    finishCastStartupTrace(
+                        "playFailure",
+                        "message=${error.localizedMessage ?: error.message ?: "unknown"}"
+                    )
+                }
                 diagnostics.log(
                     "play.failure",
                     "url=${request.url} ${describePlayerSnapshot()} " +
@@ -348,6 +378,10 @@ class PlayerController(
         val current = _uiState.value.current
         diagnostics.log("resume.request", describePlayerSnapshot())
         if (current?.isLive == true) {
+            if (player.isCastSessionAvailable || castContext?.sessionManager?.currentCastSession != null) {
+                startCastStartupTrace(current, "resume")
+                markCastStartupTrace("resumeRequested")
+            }
             playInternal(current)
             return
         }
@@ -488,6 +522,7 @@ class PlayerController(
     private fun stopLivePlayback() {
         diagnostics.log("live.stop", describePlayerSnapshot())
         castRecoveryJob?.cancel()
+        finishCastStartupTrace("liveStopped")
         player.playWhenReady = false
         if (player.currentMediaItem != null) {
             if (player.isCommandAvailable(Player.COMMAND_STOP)) {
@@ -585,6 +620,93 @@ class PlayerController(
         return player.isPlaying || (player.playWhenReady && player.playbackState != Player.STATE_IDLE)
     }
 
+    private fun ensureCastStartupTrace(reason: String) {
+        val request = _uiState.value.current?.takeIf { it.isLive } ?: return
+        if (!_uiState.value.playWhenReady) return
+        val trace = castStartupTrace
+        if (trace != null && trace.requestUrl == request.url) {
+            return
+        }
+        startCastStartupTrace(request, reason)
+    }
+
+    private fun startCastStartupTrace(request: PlayerRequest, origin: String) {
+        val receiverName = castContext?.sessionManager?.currentCastSession?.castDevice?.friendlyName
+        val previousTrace = castStartupTrace
+        if (previousTrace?.requestUrl == request.url &&
+            previousTrace.receiverName == receiverName &&
+            previousTrace.origin == origin
+        ) {
+            return
+        }
+        previousTrace?.let {
+            diagnostics.log(
+                "cast.startup.superseded",
+                "trace=${it.id} elapsedMs=${SystemClock.elapsedRealtime() - it.startedAtMs} " +
+                    "newOrigin=$origin receiver=${receiverName ?: "-"}"
+            )
+        }
+        val trace = CastStartupTrace(
+            id = nextCastStartupTraceId++,
+            requestUrl = request.url,
+            title = request.title,
+            receiverName = receiverName,
+            origin = origin,
+            startedAtMs = SystemClock.elapsedRealtime()
+        )
+        castStartupTrace = trace
+        diagnostics.log(
+            "cast.startup.begin",
+            "trace=${trace.id} origin=$origin receiver=${trace.receiverName ?: "-"} " +
+                "title=${trace.title} url=${trace.requestUrl}"
+        )
+    }
+
+    private fun markCastStartupTrace(stage: String, details: String? = null) {
+        val trace = castStartupTrace ?: return
+        if (!trace.loggedStages.add(stage)) return
+        diagnostics.log(
+            "cast.startup.$stage",
+            "trace=${trace.id} elapsedMs=${SystemClock.elapsedRealtime() - trace.startedAtMs} " +
+                "receiver=${trace.receiverName ?: "-"}${details?.let { " $it" } ?: ""}"
+        )
+    }
+
+    private fun finishCastStartupTrace(stage: String, details: String? = null) {
+        val trace = castStartupTrace ?: return
+        if (trace.loggedStages.add(stage)) {
+            diagnostics.log(
+                "cast.startup.$stage",
+                "trace=${trace.id} elapsedMs=${SystemClock.elapsedRealtime() - trace.startedAtMs} " +
+                    "receiver=${trace.receiverName ?: "-"}${details?.let { " $it" } ?: ""}"
+            )
+        }
+        castStartupTrace = null
+    }
+
+    private fun updateCastStartupTraceFromRemoteClient(source: String) {
+        val request = _uiState.value.current?.takeIf { it.isLive } ?: return
+        val remoteClient = observedRemoteMediaClient ?: return
+        val trace = castStartupTrace ?: return
+        if (trace.requestUrl != request.url) {
+            finishCastStartupTrace("requestChanged", "source=$source")
+            return
+        }
+        if (remoteClient.hasMediaSession()) {
+            markCastStartupTrace("remoteHasSession", "source=$source")
+        }
+        val actualContentId = remoteClient.mediaInfo?.contentId
+        if (actualContentId == RADIO_CAST_STREAM_URL) {
+            markCastStartupTrace("remoteMatchedMedia", "source=$source")
+        }
+        if (remoteClient.playerState == 5 || remoteClient.isBuffering) {
+            markCastStartupTrace("remoteLoading", "source=$source")
+        }
+        if (remoteClient.isPlaying) {
+            finishCastStartupTrace("remotePlaying", "source=$source")
+        }
+    }
+
     private fun scheduleLiveCastRecovery(trigger: String) {
         val request = _uiState.value.current?.takeIf { it.isLive } ?: return
         if (!_uiState.value.playWhenReady) return
@@ -617,6 +739,10 @@ class PlayerController(
                     "trigger=$trigger attempt=${index + 1} ready=$remoteReady ${describePlayerSnapshot()} " +
                         describeRemoteMediaClient(observedRemoteMediaClient)
                 )
+                markCastStartupTrace(
+                    "recoverCheck$index",
+                    "trigger=$trigger attempt=${index + 1} ready=$remoteReady"
+                )
                 if (remoteReady) {
                     return@launch
                 }
@@ -625,6 +751,7 @@ class PlayerController(
                         "cast.recover.reload",
                         "trigger=$trigger attempt=${index + 1} ${describePlayerSnapshot()}"
                     )
+                    markCastStartupTrace("recoverReload$index", "trigger=$trigger attempt=${index + 1}")
                     playInternal(
                         currentRequest,
                         forceReloadLive = true,
@@ -636,6 +763,7 @@ class PlayerController(
                 "cast.recover.timeout",
                 "trigger=$trigger ${describePlayerSnapshot()} ${describeRemoteMediaClient(observedRemoteMediaClient)}"
             )
+            markCastStartupTrace("recoverTimeout", "trigger=$trigger")
         }
     }
 
@@ -772,4 +900,14 @@ class PlayerController(
             else -> false
         }
     }
+
+    private data class CastStartupTrace(
+        val id: Int,
+        val requestUrl: String,
+        val title: String,
+        val receiverName: String?,
+        val origin: String,
+        val startedAtMs: Long,
+        val loggedStages: MutableSet<String> = mutableSetOf()
+    )
 }
