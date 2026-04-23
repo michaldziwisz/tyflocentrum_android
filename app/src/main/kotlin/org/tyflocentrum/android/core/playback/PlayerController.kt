@@ -102,6 +102,8 @@ class PlayerController(
     private var lastResumeSaveAt: Long = 0
     private var nextCastStartupTraceId: Int = 1
     private var castStartupTrace: CastStartupTrace? = null
+    private var castSessionTransitionInProgress: Boolean = false
+    private var pendingLiveHandoff: PendingLiveHandoff? = null
     @Volatile
     private var mediaButtonOverride: ((Intent) -> Boolean)? = null
     private val castContext = runCatching { CastContext.getSharedInstance(appContext) }.getOrNull()
@@ -139,34 +141,43 @@ class PlayerController(
             diagnostics.log("cast.session.available", describePlayerSnapshot())
             markCastStartupTrace("sessionAvailable")
             attachRemoteMediaClient(castContext?.sessionManager?.currentCastSession)
+            attemptPendingLiveHandoff("sessionAvailable")
             scheduleLiveCastRecovery("sessionAvailable")
         }
 
         override fun onCastSessionUnavailable() {
             diagnostics.log("cast.session.unavailable", describePlayerSnapshot())
+            castSessionTransitionInProgress = false
             castRecoveryJob?.cancel()
+            clearPendingLiveHandoff("sessionUnavailable")
             finishCastStartupTrace("sessionUnavailable")
             attachRemoteMediaClient(null)
         }
     }
     private val castSessionListener = object : SessionManagerListener<CastSession> {
         override fun onSessionStarting(session: CastSession) {
+            castSessionTransitionInProgress = true
+            queuePendingLiveHandoffForCurrentPlayback("sessionStarting")
             ensureCastStartupTrace("sessionStarting")
             diagnostics.log("cast.session.starting", describeSession(session))
             markCastStartupTrace("sessionStarting", "device=${session.castDevice?.friendlyName ?: "unknown"}")
         }
 
         override fun onSessionStarted(session: CastSession, sessionId: String) {
+            castSessionTransitionInProgress = false
             ensureCastStartupTrace("sessionStarted")
             diagnostics.log("cast.session.started", "${describeSession(session)} sessionId=$sessionId")
             markCastStartupTrace("sessionStarted", "sessionId=$sessionId")
             attachRemoteMediaClient(session)
+            attemptPendingLiveHandoff("sessionStarted")
             scheduleLiveCastRecovery("sessionStarted")
         }
 
         override fun onSessionStartFailed(session: CastSession, error: Int) {
+            castSessionTransitionInProgress = false
             diagnostics.log("cast.session.startFailed", "${describeSession(session)} error=$error")
             castRecoveryJob?.cancel()
+            clearPendingLiveHandoff("sessionStartFailed")
             finishCastStartupTrace("sessionStartFailed", "error=$error")
             attachRemoteMediaClient(null)
         }
@@ -176,8 +187,10 @@ class PlayerController(
         }
 
         override fun onSessionEnded(session: CastSession, error: Int) {
+            castSessionTransitionInProgress = false
             diagnostics.log("cast.session.ended", "${describeSession(session)} error=$error")
             castRecoveryJob?.cancel()
+            clearPendingLiveHandoff("sessionEnded")
             finishCastStartupTrace("sessionEnded", "error=$error")
             attachRemoteMediaClient(null)
         }
@@ -187,23 +200,29 @@ class PlayerController(
         }
 
         override fun onSessionResumed(session: CastSession, wasSuspended: Boolean) {
+            castSessionTransitionInProgress = false
             ensureCastStartupTrace("sessionResumed")
             diagnostics.log("cast.session.resumed", "${describeSession(session)} suspended=$wasSuspended")
             markCastStartupTrace("sessionResumed", "suspended=$wasSuspended")
             attachRemoteMediaClient(session)
+            attemptPendingLiveHandoff("sessionResumed")
             scheduleLiveCastRecovery("sessionResumed")
         }
 
         override fun onSessionResumeFailed(session: CastSession, error: Int) {
+            castSessionTransitionInProgress = false
             diagnostics.log("cast.session.resumeFailed", "${describeSession(session)} error=$error")
             castRecoveryJob?.cancel()
+            clearPendingLiveHandoff("sessionResumeFailed")
             finishCastStartupTrace("sessionResumeFailed", "error=$error")
             attachRemoteMediaClient(null)
         }
 
         override fun onSessionSuspended(session: CastSession, reason: Int) {
+            castSessionTransitionInProgress = false
             diagnostics.log("cast.session.suspended", "${describeSession(session)} reason=$reason")
             castRecoveryJob?.cancel()
+            clearPendingLiveHandoff("sessionSuspended")
             finishCastStartupTrace("sessionSuspended", "reason=$reason")
         }
     }
@@ -297,10 +316,14 @@ class PlayerController(
                     "url=${request.url} live=${request.isLive} sameUrl=$sameUrl sameLoadedItem=$sameLoadedItem " +
                         "forceReloadLive=$shouldForceReloadLive origin=$origin ${describePlayerSnapshot()}"
                 )
+                if (request.isLive && castSessionTransitionInProgress && !player.isCastSessionAvailable) {
+                    queuePendingLiveHandoff(request, "playDuringCastTransition:$origin")
+                }
                 if (request.isLive && (player.isCastSessionAvailable || castContext?.sessionManager?.currentCastSession != null)) {
                     startCastStartupTrace(request, origin)
                     markCastStartupTrace("playRequested", "origin=$origin")
                 } else if (!request.isLive) {
+                    clearPendingLiveHandoff("nonLivePlayRequested")
                     finishCastStartupTrace("nonLivePlayRequested", "url=${request.url}")
                 }
                 val startPosition = when {
@@ -522,6 +545,11 @@ class PlayerController(
     private fun stopLivePlayback() {
         diagnostics.log("live.stop", describePlayerSnapshot())
         castRecoveryJob?.cancel()
+        if (!castSessionTransitionInProgress || player.deviceInfo.playbackType == DeviceInfo.PLAYBACK_TYPE_REMOTE) {
+            clearPendingLiveHandoff("liveStopped")
+        } else {
+            diagnostics.log("cast.handoff.keep", "reason=liveStoppedDuringCastTransition ${describePlayerSnapshot()}")
+        }
         finishCastStartupTrace("liveStopped")
         player.playWhenReady = false
         if (player.currentMediaItem != null) {
@@ -566,6 +594,7 @@ class PlayerController(
     private companion object {
         const val SEEK_INCREMENT_MS = 30_000L
         const val RADIO_CAST_STREAM_URL = "https://radio.tyflopodcast.net/"
+        const val LIVE_HANDOFF_MAX_AGE_MS = 20_000L
     }
 
     private suspend fun resolvePlaybackRate(request: PlayerRequest): Float {
@@ -618,6 +647,75 @@ class PlayerController(
 
     private fun isPlaybackPendingOrActive(): Boolean {
         return player.isPlaying || (player.playWhenReady && player.playbackState != Player.STATE_IDLE)
+    }
+
+    private fun queuePendingLiveHandoffForCurrentPlayback(reason: String) {
+        val current = _uiState.value.current?.takeIf { it.isLive } ?: return
+        if (player.deviceInfo.playbackType == DeviceInfo.PLAYBACK_TYPE_REMOTE) return
+        if (_uiState.value.playWhenReady || hasLoadedMediaItemFor(current)) {
+            queuePendingLiveHandoff(current, reason)
+        }
+    }
+
+    private fun queuePendingLiveHandoff(request: PlayerRequest, reason: String) {
+        if (!request.isLive) return
+        pendingLiveHandoff = PendingLiveHandoff(
+            request = request,
+            createdAtMs = SystemClock.elapsedRealtime(),
+            reason = reason
+        )
+        diagnostics.log(
+            "cast.handoff.queued",
+            "reason=$reason url=${request.url} ${describePlayerSnapshot()}"
+        )
+    }
+
+    private fun clearPendingLiveHandoff(reason: String) {
+        val handoff = pendingLiveHandoff ?: return
+        diagnostics.log(
+            "cast.handoff.cleared",
+            "reason=$reason ageMs=${SystemClock.elapsedRealtime() - handoff.createdAtMs} url=${handoff.request.url}"
+        )
+        pendingLiveHandoff = null
+    }
+
+    private fun attemptPendingLiveHandoff(trigger: String) {
+        val handoff = pendingLiveHandoff ?: return
+        val ageMs = SystemClock.elapsedRealtime() - handoff.createdAtMs
+        if (ageMs > LIVE_HANDOFF_MAX_AGE_MS) {
+            diagnostics.log(
+                "cast.handoff.skip",
+                "trigger=$trigger reason=stale ageMs=$ageMs url=${handoff.request.url}"
+            )
+            pendingLiveHandoff = null
+            return
+        }
+        if (!player.isCastSessionAvailable) {
+            diagnostics.log(
+                "cast.handoff.skip",
+                "trigger=$trigger reason=sessionUnavailable ageMs=$ageMs ${describePlayerSnapshot()}"
+            )
+            return
+        }
+        attachRemoteMediaClient(castContext?.sessionManager?.currentCastSession)
+        if (matchesActiveRemotePlayback(handoff.request, observedRemoteMediaClient)) {
+            diagnostics.log(
+                "cast.handoff.skip",
+                "trigger=$trigger reason=remoteAlreadyActive ageMs=$ageMs ${describePlayerSnapshot()}"
+            )
+            pendingLiveHandoff = null
+            return
+        }
+        diagnostics.log(
+            "cast.handoff.attempt",
+            "trigger=$trigger ageMs=$ageMs from=${handoff.reason} url=${handoff.request.url} ${describePlayerSnapshot()}"
+        )
+        pendingLiveHandoff = null
+        playInternal(
+            handoff.request,
+            forceReloadLive = true,
+            origin = "castHandoff:$trigger"
+        )
     }
 
     private fun ensureCastStartupTrace(reason: String) {
@@ -703,6 +801,7 @@ class PlayerController(
             markCastStartupTrace("remoteLoading", "source=$source")
         }
         if (remoteClient.isPlaying) {
+            clearPendingLiveHandoff("remotePlaying")
             finishCastStartupTrace("remotePlaying", "source=$source")
         }
     }
@@ -909,5 +1008,11 @@ class PlayerController(
         val origin: String,
         val startedAtMs: Long,
         val loggedStages: MutableSet<String> = mutableSetOf()
+    )
+
+    private data class PendingLiveHandoff(
+        val request: PlayerRequest,
+        val createdAtMs: Long,
+        val reason: String
     )
 }
