@@ -2,6 +2,7 @@ package org.tyflocentrum.android.core.playback
 
 import android.content.Context
 import android.content.Intent
+import android.view.KeyEvent
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.DeviceInfo
@@ -72,6 +73,9 @@ class PlayerController(
                     intent: Intent
                 ): Boolean {
                     if (mediaButtonOverride?.invoke(intent) == true) {
+                        return true
+                    }
+                    if (handleLiveMediaButtonEvent(intent)) {
                         return true
                     }
                     return super.onMediaButtonEvent(session, controllerInfo, intent)
@@ -203,6 +207,10 @@ class PlayerController(
     }
 
     fun pause() {
+        if (_uiState.value.current?.isLive == true) {
+            stopLivePlayback()
+            return
+        }
         player.pause()
         updateUiState()
     }
@@ -319,7 +327,44 @@ class PlayerController(
                 .setPlayerCommand(Player.COMMAND_SEEK_FORWARD)
                 .setDisplayName("Przewiń 30 sekund")
                 .build()
-        )
+            )
+    }
+
+    private fun stopLivePlayback() {
+        player.playWhenReady = false
+        if (player.currentMediaItem != null) {
+            if (player.isCommandAvailable(Player.COMMAND_STOP)) {
+                player.stop()
+            }
+            if (player.isCommandAvailable(Player.COMMAND_CHANGE_MEDIA_ITEMS)) {
+                player.clearMediaItems()
+            }
+        }
+        updateUiState()
+    }
+
+    private fun handleLiveMediaButtonEvent(intent: Intent): Boolean {
+        val current = _uiState.value.current?.takeIf { it.isLive } ?: return false
+        val keyEvent = intent.mediaButtonKeyEvent() ?: return false
+        if (!keyEvent.isLivePlaybackControlKey()) return false
+        return when (keyEvent.action) {
+            KeyEvent.ACTION_DOWN -> {
+                if (keyEvent.repeatCount == 0) {
+                    when (keyEvent.keyCode) {
+                        KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
+                        KeyEvent.KEYCODE_HEADSETHOOK -> {
+                            if (player.isPlaying) stopLivePlayback() else play(current)
+                        }
+                        KeyEvent.KEYCODE_MEDIA_PLAY -> play(current)
+                        KeyEvent.KEYCODE_MEDIA_PAUSE,
+                        KeyEvent.KEYCODE_MEDIA_STOP -> stopLivePlayback()
+                    }
+                }
+                true
+            }
+            KeyEvent.ACTION_UP -> true
+            else -> false
+        }
     }
 
     private companion object {
@@ -373,5 +418,25 @@ class PlayerController(
             ?: currentItem.requestMetadata.mediaUri?.toString()
             ?: currentItem.mediaId.takeIf { it.isNotBlank() }
         return currentUrl == request.url
+    }
+
+    private fun Intent.mediaButtonKeyEvent(): KeyEvent? {
+        return if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            getParcelableExtra(Intent.EXTRA_KEY_EVENT, KeyEvent::class.java)
+        } else {
+            @Suppress("DEPRECATION")
+            getParcelableExtra(Intent.EXTRA_KEY_EVENT)
+        }
+    }
+
+    private fun KeyEvent.isLivePlaybackControlKey(): Boolean {
+        return when (keyCode) {
+            KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
+            KeyEvent.KEYCODE_MEDIA_PLAY,
+            KeyEvent.KEYCODE_MEDIA_PAUSE,
+            KeyEvent.KEYCODE_MEDIA_STOP,
+            KeyEvent.KEYCODE_HEADSETHOOK -> true
+            else -> false
+        }
     }
 }
