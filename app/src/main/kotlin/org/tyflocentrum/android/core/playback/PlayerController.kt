@@ -238,7 +238,7 @@ class PlayerController(
                 ensurePlaybackServiceRunning()
                 val sameUrl = _uiState.value.current?.url == request.url
                 val sameLoadedItem = sameUrl && hasLoadedMediaItemFor(request)
-                val shouldForceReloadLive = request.isLive && sameLoadedItem && !player.isPlaying
+                val shouldForceReloadLive = request.isLive && sameLoadedItem && !isPlaybackPendingOrActive()
                 val sameItem = sameLoadedItem && !shouldForceReloadLive
                 diagnostics.log(
                     "play.request",
@@ -284,6 +284,7 @@ class PlayerController(
                 _uiState.value = _uiState.value.copy(
                     current = request,
                     isPlaying = false,
+                    playWhenReady = false,
                     isBuffering = false,
                     errorMessage = error.localizedMessage ?: "Nie udało się odtworzyć materiału."
                 )
@@ -296,11 +297,13 @@ class PlayerController(
             "togglePlayPause",
             "target=${request.url} hasLoaded=${hasLoadedMediaItemFor(request)} ${describePlayerSnapshot()}"
         )
-        if (_uiState.value.current?.url == request.url && player.currentMediaItem != null) {
-            if (player.isPlaying) {
+        if (_uiState.value.current?.url == request.url) {
+            if (isPlaybackPendingOrActive()) {
                 pause()
-            } else {
+            } else if (player.currentMediaItem != null) {
                 resume()
+            } else {
+                play(request)
             }
         } else {
             play(request)
@@ -409,6 +412,7 @@ class PlayerController(
         val duration = player.duration.takeIf { it > 0 }
         _uiState.value = _uiState.value.copy(
             isPlaying = player.isPlaying,
+            playWhenReady = player.playWhenReady,
             isBuffering = player.playbackState == Player.STATE_BUFFERING,
             isRemotePlayback = player.deviceInfo.playbackType == DeviceInfo.PLAYBACK_TYPE_REMOTE,
             durationMs = duration,
@@ -474,7 +478,7 @@ class PlayerController(
                     when (keyEvent.keyCode) {
                         KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
                         KeyEvent.KEYCODE_HEADSETHOOK -> {
-                            if (player.isPlaying) stopLivePlayback() else play(current)
+                            if (isPlaybackPendingOrActive()) stopLivePlayback() else play(current)
                         }
                         KeyEvent.KEYCODE_MEDIA_PLAY -> play(current)
                         KeyEvent.KEYCODE_MEDIA_PAUSE,
@@ -539,6 +543,10 @@ class PlayerController(
             ?: currentItem.requestMetadata.mediaUri?.toString()
             ?: currentItem.mediaId.takeIf { it.isNotBlank() }
         return currentUrl == request.url
+    }
+
+    private fun isPlaybackPendingOrActive(): Boolean {
+        return player.isPlaying || (player.playWhenReady && player.playbackState != Player.STATE_IDLE)
     }
 
     private fun attachRemoteMediaClient(session: CastSession?) {

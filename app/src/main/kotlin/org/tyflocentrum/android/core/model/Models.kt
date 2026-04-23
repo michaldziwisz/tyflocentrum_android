@@ -280,6 +280,7 @@ data class PlayerRequest(
 data class PlayerUiState(
     val current: PlayerRequest? = null,
     val isPlaying: Boolean = false,
+    val playWhenReady: Boolean = false,
     val isBuffering: Boolean = false,
     val isRemotePlayback: Boolean = false,
     val durationMs: Long? = null,

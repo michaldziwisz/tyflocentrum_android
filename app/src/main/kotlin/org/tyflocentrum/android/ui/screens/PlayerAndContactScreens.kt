@@ -354,8 +354,8 @@ fun PlayerScreen(
                                 onClick = { appContainer.playerController.togglePlayPause(request) }
                             ) {
                                 Icon(
-                                    imageVector = if (playerState.isPlaying) Icons.Filled.PauseCircle else Icons.Filled.PlayCircle,
-                                    contentDescription = if (playerState.isPlaying) "Pauza" else "Odtwarzaj",
+                                    imageVector = if (playerState.playWhenReady) Icons.Filled.PauseCircle else Icons.Filled.PlayCircle,
+                                    contentDescription = if (playerState.playWhenReady) "Pauza" else "Odtwarzaj",
                                     tint = MaterialTheme.colorScheme.primary
                                 )
                             }

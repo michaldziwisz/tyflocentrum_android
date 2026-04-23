@@ -193,12 +193,12 @@ fun AppScreenScaffold(
         bottomBar = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (currentPlayer != null) {
-                    MiniPlayerBar(
-                        request = currentPlayer,
-                        isPlaying = playerState.isPlaying,
-                        isRemotePlayback = playerState.isRemotePlayback,
-                        elapsedMs = playerState.elapsedMs,
-                        onTogglePlayback = { appContainer.playerController.togglePlayPause(currentPlayer) },
+                        MiniPlayerBar(
+                            request = currentPlayer,
+                            playWhenReady = playerState.playWhenReady,
+                            isRemotePlayback = playerState.isRemotePlayback,
+                            elapsedMs = playerState.elapsedMs,
+                            onTogglePlayback = { appContainer.playerController.togglePlayPause(currentPlayer) },
                         onOpenPlayer = {
                             navController.navigate(currentPlayer.asPlayerRoute(playerState.elapsedMs)) {
                                 launchSingleTop = true
@@ -289,7 +289,7 @@ fun StatePane(
 @Composable
 private fun MiniPlayerBar(
     request: PlayerRequest,
-    isPlaying: Boolean,
+    playWhenReady: Boolean,
     isRemotePlayback: Boolean,
     elapsedMs: Long,
     onTogglePlayback: () -> Unit,
@@ -332,8 +332,8 @@ private fun MiniPlayerBar(
             }
             IconButton(onClick = onTogglePlayback) {
                 Icon(
-                    imageVector = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                    contentDescription = if (isPlaying) "Pauza" else "Odtwarzaj"
+                    imageVector = if (playWhenReady) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                    contentDescription = if (playWhenReady) "Pauza" else "Odtwarzaj"
                 )
             }
         }
