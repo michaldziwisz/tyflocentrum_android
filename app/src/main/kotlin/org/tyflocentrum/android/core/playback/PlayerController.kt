@@ -13,6 +13,7 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.cast.CastPlayer
 import androidx.media3.cast.RemoteCastPlayer
+import androidx.media3.cast.SessionAvailabilityListener
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.CommandButton
 import androidx.media3.session.MediaSession
@@ -96,6 +97,7 @@ class PlayerController(
 
     private var settingsSnapshot = AppSettings()
     private var progressJob: Job? = null
+    private var castRecoveryJob: Job? = null
     private var lastResumeSaveAt: Long = 0
     @Volatile
     private var mediaButtonOverride: ((Intent) -> Boolean)? = null
@@ -126,6 +128,19 @@ class PlayerController(
             diagnostics.log("cast.remote.error", error.toString())
         }
     }
+    private val castAvailabilityListener = object : SessionAvailabilityListener {
+        override fun onCastSessionAvailable() {
+            diagnostics.log("cast.session.available", describePlayerSnapshot())
+            attachRemoteMediaClient(castContext?.sessionManager?.currentCastSession)
+            scheduleLiveCastRecovery("sessionAvailable")
+        }
+
+        override fun onCastSessionUnavailable() {
+            diagnostics.log("cast.session.unavailable", describePlayerSnapshot())
+            castRecoveryJob?.cancel()
+            attachRemoteMediaClient(null)
+        }
+    }
     private val castSessionListener = object : SessionManagerListener<CastSession> {
         override fun onSessionStarting(session: CastSession) {
             diagnostics.log("cast.session.starting", describeSession(session))
@@ -134,10 +149,12 @@ class PlayerController(
         override fun onSessionStarted(session: CastSession, sessionId: String) {
             diagnostics.log("cast.session.started", "${describeSession(session)} sessionId=$sessionId")
             attachRemoteMediaClient(session)
+            scheduleLiveCastRecovery("sessionStarted")
         }
 
         override fun onSessionStartFailed(session: CastSession, error: Int) {
             diagnostics.log("cast.session.startFailed", "${describeSession(session)} error=$error")
+            castRecoveryJob?.cancel()
             attachRemoteMediaClient(null)
         }
 
@@ -147,6 +164,7 @@ class PlayerController(
 
         override fun onSessionEnded(session: CastSession, error: Int) {
             diagnostics.log("cast.session.ended", "${describeSession(session)} error=$error")
+            castRecoveryJob?.cancel()
             attachRemoteMediaClient(null)
         }
 
@@ -157,19 +175,23 @@ class PlayerController(
         override fun onSessionResumed(session: CastSession, wasSuspended: Boolean) {
             diagnostics.log("cast.session.resumed", "${describeSession(session)} suspended=$wasSuspended")
             attachRemoteMediaClient(session)
+            scheduleLiveCastRecovery("sessionResumed")
         }
 
         override fun onSessionResumeFailed(session: CastSession, error: Int) {
             diagnostics.log("cast.session.resumeFailed", "${describeSession(session)} error=$error")
+            castRecoveryJob?.cancel()
             attachRemoteMediaClient(null)
         }
 
         override fun onSessionSuspended(session: CastSession, reason: Int) {
             diagnostics.log("cast.session.suspended", "${describeSession(session)} reason=$reason")
+            castRecoveryJob?.cancel()
         }
     }
 
     init {
+        remotePlayer.setSessionAvailabilityListener(castAvailabilityListener)
         diagnostics.log("player.init", describePlayerSnapshot())
         player.addListener(
             object : Player.Listener {
@@ -233,17 +255,29 @@ class PlayerController(
     }
 
     fun play(request: PlayerRequest) {
+        playInternal(request)
+    }
+
+    private fun playInternal(
+        request: PlayerRequest,
+        forceReloadLive: Boolean = false,
+        origin: String = "ui"
+    ) {
         scope.launch {
             runCatching {
                 ensurePlaybackServiceRunning()
                 val sameUrl = _uiState.value.current?.url == request.url
                 val sameLoadedItem = sameUrl && hasLoadedMediaItemFor(request)
-                val shouldForceReloadLive = request.isLive && sameLoadedItem && !isPlaybackPendingOrActive()
+                val shouldForceReloadLive = forceReloadLive ||
+                    (request.isLive && sameLoadedItem && !isPlaybackPendingOrActive())
                 val sameItem = sameLoadedItem && !shouldForceReloadLive
+                if (!request.isLive) {
+                    castRecoveryJob?.cancel()
+                }
                 diagnostics.log(
                     "play.request",
                     "url=${request.url} live=${request.isLive} sameUrl=$sameUrl sameLoadedItem=$sameLoadedItem " +
-                        "forceReloadLive=$shouldForceReloadLive ${describePlayerSnapshot()}"
+                        "forceReloadLive=$shouldForceReloadLive origin=$origin ${describePlayerSnapshot()}"
                 )
                 val startPosition = when {
                     request.isLive -> C.TIME_UNSET
@@ -303,10 +337,10 @@ class PlayerController(
             } else if (player.currentMediaItem != null) {
                 resume()
             } else {
-                play(request)
+                playInternal(request)
             }
         } else {
-            play(request)
+            playInternal(request)
         }
     }
 
@@ -314,7 +348,7 @@ class PlayerController(
         val current = _uiState.value.current
         diagnostics.log("resume.request", describePlayerSnapshot())
         if (current?.isLive == true) {
-            play(current)
+            playInternal(current)
             return
         }
         ensurePlaybackServiceRunning()
@@ -423,6 +457,7 @@ class PlayerController(
 
     fun release() {
         progressJob?.cancel()
+        castRecoveryJob?.cancel()
         castContext?.sessionManager?.removeSessionManagerListener(castSessionListener, CastSession::class.java)
         attachRemoteMediaClient(null)
         mediaSession.release()
@@ -452,6 +487,7 @@ class PlayerController(
 
     private fun stopLivePlayback() {
         diagnostics.log("live.stop", describePlayerSnapshot())
+        castRecoveryJob?.cancel()
         player.playWhenReady = false
         if (player.currentMediaItem != null) {
             if (player.isCommandAvailable(Player.COMMAND_STOP)) {
@@ -478,9 +514,9 @@ class PlayerController(
                     when (keyEvent.keyCode) {
                         KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
                         KeyEvent.KEYCODE_HEADSETHOOK -> {
-                            if (isPlaybackPendingOrActive()) stopLivePlayback() else play(current)
+                            if (isPlaybackPendingOrActive()) stopLivePlayback() else playInternal(current)
                         }
-                        KeyEvent.KEYCODE_MEDIA_PLAY -> play(current)
+                        KeyEvent.KEYCODE_MEDIA_PLAY -> playInternal(current)
                         KeyEvent.KEYCODE_MEDIA_PAUSE,
                         KeyEvent.KEYCODE_MEDIA_STOP -> stopLivePlayback()
                     }
@@ -547,6 +583,77 @@ class PlayerController(
 
     private fun isPlaybackPendingOrActive(): Boolean {
         return player.isPlaying || (player.playWhenReady && player.playbackState != Player.STATE_IDLE)
+    }
+
+    private fun scheduleLiveCastRecovery(trigger: String) {
+        val request = _uiState.value.current?.takeIf { it.isLive } ?: return
+        if (!_uiState.value.playWhenReady) return
+        castRecoveryJob?.cancel()
+        castRecoveryJob = scope.launch {
+            val attemptDelaysMs = listOf(0L, 750L, 2_000L, 5_000L, 15_000L, 30_000L)
+            for ((index, waitMs) in attemptDelaysMs.withIndex()) {
+                if (waitMs > 0) delay(waitMs)
+                val currentRequest = _uiState.value.current
+                if (currentRequest?.url != request.url || currentRequest.isLive != true || !_uiState.value.playWhenReady) {
+                    diagnostics.log(
+                        "cast.recover.stop",
+                        "trigger=$trigger attempt=${index + 1} reason=requestChanged ${describePlayerSnapshot()}"
+                    )
+                    return@launch
+                }
+                if (!player.isCastSessionAvailable) {
+                    diagnostics.log(
+                        "cast.recover.stop",
+                        "trigger=$trigger attempt=${index + 1} reason=sessionUnavailable ${describePlayerSnapshot()}"
+                    )
+                    return@launch
+                }
+
+                attachRemoteMediaClient(castContext?.sessionManager?.currentCastSession)
+                runCatching { observedRemoteMediaClient?.requestStatus() }
+                val remoteReady = matchesActiveRemotePlayback(currentRequest, observedRemoteMediaClient)
+                diagnostics.log(
+                    "cast.recover.check",
+                    "trigger=$trigger attempt=${index + 1} ready=$remoteReady ${describePlayerSnapshot()} " +
+                        describeRemoteMediaClient(observedRemoteMediaClient)
+                )
+                if (remoteReady) {
+                    return@launch
+                }
+                if (index > 0) {
+                    diagnostics.log(
+                        "cast.recover.reload",
+                        "trigger=$trigger attempt=${index + 1} ${describePlayerSnapshot()}"
+                    )
+                    playInternal(
+                        currentRequest,
+                        forceReloadLive = true,
+                        origin = "castRecovery:$trigger:${index + 1}"
+                    )
+                }
+            }
+            diagnostics.log(
+                "cast.recover.timeout",
+                "trigger=$trigger ${describePlayerSnapshot()} ${describeRemoteMediaClient(observedRemoteMediaClient)}"
+            )
+        }
+    }
+
+    private fun matchesActiveRemotePlayback(
+        request: PlayerRequest,
+        remoteClient: RemoteMediaClient?
+    ): Boolean {
+        if (!request.isLive || remoteClient == null || !remoteClient.hasMediaSession()) {
+            return false
+        }
+        val expectedContentId = RADIO_CAST_STREAM_URL
+        val actualContentId = remoteClient.mediaInfo?.contentId
+        if (actualContentId != expectedContentId) {
+            return false
+        }
+        return remoteClient.isPlaying ||
+            remoteClient.isBuffering ||
+            remoteClient.playerState == 5
     }
 
     private fun attachRemoteMediaClient(session: CastSession?) {
