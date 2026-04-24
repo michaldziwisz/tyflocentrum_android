@@ -4,6 +4,14 @@ plugins {
     id("org.jetbrains.kotlin.plugin.serialization")
 }
 
+val castReceiverAppId = providers
+    .gradleProperty("TYFLO_CAST_APP_ID")
+    .orElse(providers.environmentVariable("TYFLO_CAST_APP_ID"))
+    .getOrElse("")
+    .trim()
+    .replace("\\", "\\\\")
+    .replace("\"", "\\\"")
+
 android {
     namespace = "org.tyflocentrum.android"
     compileSdk = 36
@@ -14,6 +22,7 @@ android {
         targetSdk = 36
         versionCode = 1
         versionName = "1.0.0"
+        buildConfigField("String", "CAST_RECEIVER_APP_ID", "\"$castReceiverAppId\"")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {

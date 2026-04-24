@@ -47,9 +47,41 @@ APK debug:
 Repozytorium zawiera workflowy GitHub Actions:
 
 - `Android CI` uruchamia build i lint przy pushu do `main` oraz dla pull requestów,
-- `Release APK` pozwala ręcznie opublikować testowe wydanie jako GitHub Release.
+- `Release APK` pozwala ręcznie opublikować testowe wydanie jako GitHub Release,
+- `Deploy Cast Receiver` publikuje opcjonalny custom Web Receiver do GitHub Pages.
 
 Uwaga:
 
 - workflow wydawniczy publikuje instalowalny `debug APK`,
 - produkcyjne wydanie podpisane do dystrybucji w Google Play wymaga osobnej konfiguracji kluczy i podpisywania.
+
+## Custom Cast Receiver
+
+Aplikacja może opcjonalnie używać własnego Web Receivera dla Tyfloradia zamiast
+domyślnego receivera Google. Jeśli `TYFLO_CAST_APP_ID` nie jest ustawione,
+build automatycznie wraca do `DEFAULT_MEDIA_RECEIVER_APPLICATION_ID`.
+
+### Konfiguracja lokalna
+
+Przed buildem ustaw `TYFLO_CAST_APP_ID`:
+
+```properties
+TYFLO_CAST_APP_ID=YOUR_RECEIVER_APP_ID
+```
+
+Możesz to dodać do:
+
+- `gradle.properties` w projekcie,
+- `~/.gradle/gradle.properties`,
+- albo zmiennej środowiskowej `TYFLO_CAST_APP_ID`.
+
+### GitHub Actions
+
+Jeśli chcesz, aby publiczne buildy z GitHub Actions używały custom receivera,
+ustaw w repozytorium zmienną `Actions` o nazwie `TYFLO_CAST_APP_ID`.
+
+### GitHub Pages
+
+Pliki receivera są w katalogu `cast-receiver/`. Workflow `Deploy Cast Receiver`
+publikuje je do GitHub Pages, skąd można podpiąć URL do Google Cast SDK
+Developer Console jako `Custom Web Receiver`.

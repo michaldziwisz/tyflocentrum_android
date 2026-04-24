@@ -12,6 +12,8 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      TYFLO_CAST_APP_ID: ${{ vars.TYFLO_CAST_APP_ID }}
 
     steps:
       - name: Checkout repository
