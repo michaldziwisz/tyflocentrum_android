@@ -66,6 +66,10 @@ import org.tyflocentrum.android.ui.common.PlainTextScreen
 import org.tyflocentrum.android.ui.common.StatePane
 import org.tyflocentrum.android.ui.common.ToggleRow
 
+private const val APP_SUPPORT_URL = "https://michaldziwisz.github.io/tyflocentrum_android/"
+private const val APP_PRIVACY_POLICY_URL = "https://michaldziwisz.github.io/tyflocentrum_android/privacy/"
+private const val APP_SUPPORT_EMAIL = "mailto:michal@dziwisz.net"
+
 @Composable
 fun PodcastDetailScreen(
     navController: NavHostController,
@@ -584,6 +588,31 @@ fun SettingsScreen(
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+
+            Text(text = "Prywatność i wsparcie", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Text(
+                text = "Znajdziesz tu publiczną politykę prywatności i kanał wsparcia dla aplikacji.",
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Button(
+                modifier = Modifier.fillMaxWidth(),
+                onClick = { openUri(context, APP_PRIVACY_POLICY_URL) }
+            ) {
+                Text("Otwórz politykę prywatności")
+            }
+            Button(
+                modifier = Modifier.fillMaxWidth(),
+                onClick = { openUri(context, APP_SUPPORT_URL) }
+            ) {
+                Text("Otwórz stronę wsparcia")
+            }
+            Button(
+                modifier = Modifier.fillMaxWidth(),
+                onClick = { openUri(context, APP_SUPPORT_EMAIL) }
+            ) {
+                Text("Napisz wiadomość e-mail")
+            }
 
             if (BuildConfig.DEBUG) {
                 Text(text = "Diagnostyka Cast", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
