@@ -7,10 +7,20 @@ Google Play wymaga co najmniej `2` screenshotów, ale dla `Tyflocentrum` warto p
 ## Proponowany zestaw dla `pl-PL`
 
 - `01-nowosci-phone.png` - ekran `Nowości`
-- `02-podcast-player-phone.png` - odtwarzacz podcastu
-- `03-artykul-phone.png` - widok artykułu
+- `02-podcast-detail-phone.png` - widok odcinka podcastu
+- `03-player-phone.png` - odtwarzacz podcastu
 - `04-tyfloradio-phone.png` - ekran Tyfloradia
-- `05-kontakt-glosowka-phone.png` - ekran głosówki lub kontaktu tekstowego
+- `05-artykuly-phone.png` - lista działów artykułów
+
+## Aktualny stan repo
+
+W katalogu `pl-PL` jest już gotowy bazowy zestaw pięciu screenshotów wykonanych z fizycznego telefonu Android przez `adb`.
+
+Przed finalnym uploadem do Play Console warto jeszcze ręcznie sprawdzić:
+
+- czy nie ma niechcianych ikon systemowych lub aktywnych powiadomień,
+- czy kolejność screenshotów najlepiej wspiera opis funkcji aplikacji,
+- czy nie warto podmienić któregoś kadru na ekran kontaktu lub komentarzy.
 
 ## Jak robić screenshoty
 

@@ -8,12 +8,16 @@
 
 ## Stan projektu
 
-To jest aktualny blocker publikacyjny.
+W katalogu jest już robocza propozycja ikony sklepowej:
 
-W [AndroidManifest.xml](/mnt/d/projekty/tyflocentrum_android/app/src/main/AndroidManifest.xml) aplikacja nadal korzysta z systemowej ikony `sym_def_app_icon`, więc przed pierwszą publikacją trzeba przygotować:
+- `tyflocentrum-play-icon-512.png`
+
+W [AndroidManifest.xml](/mnt/d/projekty/tyflocentrum_android/app/src/main/AndroidManifest.xml) aplikacja nadal korzysta z systemowej ikony `sym_def_app_icon`, więc przed pierwszą publikacją nadal trzeba przygotować:
 
 - launcher icon dla samej aplikacji,
 - spójną ikonę sklepową `512 x 512`.
+
+Obecny plik może być użyty jako draft do Play Console albo jako punkt wyjścia dla finalnego opracowania graficznego.
 
 ## Zalecenie
 
