@@ -1,7 +1,7 @@
-package org.tyflocentrum.android.core.playback
+package net.tyflopodcast.tyflocentrum.core.playback
 
 import android.util.Log
-import org.tyflocentrum.android.BuildConfig
+import net.tyflopodcast.tyflocentrum.BuildConfig
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import java.util.ArrayDeque

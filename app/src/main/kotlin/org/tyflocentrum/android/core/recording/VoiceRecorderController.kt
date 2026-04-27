@@ -1,4 +1,4 @@
-package org.tyflocentrum.android.core.recording
+package net.tyflopodcast.tyflocentrum.core.recording
 
 import android.Manifest
 import android.content.Context
@@ -27,7 +27,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import org.tyflocentrum.android.core.playback.PlayerController
+import net.tyflopodcast.tyflocentrum.core.playback.PlayerController
 
 enum class RecorderState {
     IDLE,

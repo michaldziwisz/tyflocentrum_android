@@ -13,7 +13,7 @@ Przygotowac pierwsza publikacje `Tyflocentrum` do Google Play tak, aby:
 
 ### Fakty techniczne
 
-- `applicationId`: `org.tyflocentrum.android`
+- `applicationId`: `net.tyflopodcast.tyflocentrum`
 - `minSdk`: `26`
 - `targetSdk`: `36`
 - `compileSdk`: `36`
@@ -124,7 +124,7 @@ Szczegoly sa w [store/assets/README.md](/mnt/d/projekty/tyflocentrum_android/sto
 ### 1. Utworz aplikacje w Play Console
 
 - zarezerwuj nazwe `Tyflocentrum`,
-- potwierdz `applicationId = org.tyflocentrum.android`,
+- potwierdz `applicationId = net.tyflopodcast.tyflocentrum`,
 - ustaw aplikacje jako bezplatna.
 
 ### 2. Przygotuj publiczne strony

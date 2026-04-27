@@ -1,4 +1,4 @@
-package org.tyflocentrum.android.core.model
+package net.tyflopodcast.tyflocentrum.core.model
 
 import java.util.Locale
 import java.util.regex.Pattern

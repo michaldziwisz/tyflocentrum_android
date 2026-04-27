@@ -1,4 +1,4 @@
-package org.tyflocentrum.android.core.model
+package net.tyflopodcast.tyflocentrum.core.model
 
 import java.time.LocalDateTime
 import java.time.ZoneId

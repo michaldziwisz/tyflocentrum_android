@@ -1,4 +1,4 @@
-package org.tyflocentrum.android.core.playback
+package net.tyflopodcast.tyflocentrum.core.playback
 
 import android.content.Context
 import android.content.Intent
@@ -36,12 +36,12 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
-import org.tyflocentrum.android.core.model.AppSettings
-import org.tyflocentrum.android.core.model.PlaybackRatePolicy
-import org.tyflocentrum.android.core.model.PlaybackRateRememberMode
-import org.tyflocentrum.android.core.model.PlayerRequest
-import org.tyflocentrum.android.core.model.PlayerUiState
-import org.tyflocentrum.android.core.storage.AppPreferencesRepository
+import net.tyflopodcast.tyflocentrum.core.model.AppSettings
+import net.tyflopodcast.tyflocentrum.core.model.PlaybackRatePolicy
+import net.tyflopodcast.tyflocentrum.core.model.PlaybackRateRememberMode
+import net.tyflopodcast.tyflocentrum.core.model.PlayerRequest
+import net.tyflopodcast.tyflocentrum.core.model.PlayerUiState
+import net.tyflopodcast.tyflocentrum.core.storage.AppPreferencesRepository
 
 @UnstableApi
 class PlayerController(

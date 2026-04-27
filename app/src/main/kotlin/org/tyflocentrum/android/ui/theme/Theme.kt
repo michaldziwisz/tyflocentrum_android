@@ -1,4 +1,4 @@
-package org.tyflocentrum.android.ui.theme
+package net.tyflopodcast.tyflocentrum.ui.theme
 
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme

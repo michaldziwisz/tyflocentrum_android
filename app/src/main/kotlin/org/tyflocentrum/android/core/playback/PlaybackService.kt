@@ -1,10 +1,10 @@
-package org.tyflocentrum.android.core.playback
+package net.tyflopodcast.tyflocentrum.core.playback
 
 import android.content.Intent
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
-import org.tyflocentrum.android.TyflocentrumApplication
+import net.tyflopodcast.tyflocentrum.TyflocentrumApplication
 
 @UnstableApi
 class PlaybackService : MediaSessionService() {

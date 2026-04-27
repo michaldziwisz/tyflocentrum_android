@@ -1,4 +1,4 @@
-package org.tyflocentrum.android.core.playback
+package net.tyflopodcast.tyflocentrum.core.playback
 
 import android.content.Context
 import com.google.android.gms.cast.CastMediaControlIntent

@@ -1,4 +1,4 @@
-package org.tyflocentrum.android.ui
+package net.tyflopodcast.tyflocentrum.ui
 
 import android.net.Uri
 import androidx.compose.runtime.Composable
@@ -10,29 +10,29 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
-import org.tyflocentrum.android.core.AppContainer
-import org.tyflocentrum.android.core.model.FavoriteArticleOrigin
-import org.tyflocentrum.android.ui.common.RootDestination
-import org.tyflocentrum.android.ui.screens.ArticleDetailScreen
-import org.tyflocentrum.android.ui.screens.ArticleListScreen
-import org.tyflocentrum.android.ui.screens.ArticlesHomeScreen
-import org.tyflocentrum.android.ui.screens.ContactMenuScreen
-import org.tyflocentrum.android.ui.screens.ContactTextMessageScreen
-import org.tyflocentrum.android.ui.screens.ContactVoiceMessageScreen
-import org.tyflocentrum.android.ui.screens.FavoritesScreen
-import org.tyflocentrum.android.ui.screens.MagazineScreen
-import org.tyflocentrum.android.ui.screens.MagazineIssueScreen
-import org.tyflocentrum.android.ui.screens.NewsScreen
-import org.tyflocentrum.android.ui.screens.PlayerScreen
-import org.tyflocentrum.android.ui.screens.PlayerChapterMarkersScreen
-import org.tyflocentrum.android.ui.screens.PlayerRelatedLinksScreen
-import org.tyflocentrum.android.ui.screens.PodcastCommentsScreen
-import org.tyflocentrum.android.ui.screens.PodcastDetailScreen
-import org.tyflocentrum.android.ui.screens.PodcastListScreen
-import org.tyflocentrum.android.ui.screens.PodcastsHomeScreen
-import org.tyflocentrum.android.ui.screens.RadioHomeScreen
-import org.tyflocentrum.android.ui.screens.SearchScreen
-import org.tyflocentrum.android.ui.screens.SettingsScreen
+import net.tyflopodcast.tyflocentrum.core.AppContainer
+import net.tyflopodcast.tyflocentrum.core.model.FavoriteArticleOrigin
+import net.tyflopodcast.tyflocentrum.ui.common.RootDestination
+import net.tyflopodcast.tyflocentrum.ui.screens.ArticleDetailScreen
+import net.tyflopodcast.tyflocentrum.ui.screens.ArticleListScreen
+import net.tyflopodcast.tyflocentrum.ui.screens.ArticlesHomeScreen
+import net.tyflopodcast.tyflocentrum.ui.screens.ContactMenuScreen
+import net.tyflopodcast.tyflocentrum.ui.screens.ContactTextMessageScreen
+import net.tyflopodcast.tyflocentrum.ui.screens.ContactVoiceMessageScreen
+import net.tyflopodcast.tyflocentrum.ui.screens.FavoritesScreen
+import net.tyflopodcast.tyflocentrum.ui.screens.MagazineScreen
+import net.tyflopodcast.tyflocentrum.ui.screens.MagazineIssueScreen
+import net.tyflopodcast.tyflocentrum.ui.screens.NewsScreen
+import net.tyflopodcast.tyflocentrum.ui.screens.PlayerScreen
+import net.tyflopodcast.tyflocentrum.ui.screens.PlayerChapterMarkersScreen
+import net.tyflopodcast.tyflocentrum.ui.screens.PlayerRelatedLinksScreen
+import net.tyflopodcast.tyflocentrum.ui.screens.PodcastCommentsScreen
+import net.tyflopodcast.tyflocentrum.ui.screens.PodcastDetailScreen
+import net.tyflopodcast.tyflocentrum.ui.screens.PodcastListScreen
+import net.tyflopodcast.tyflocentrum.ui.screens.PodcastsHomeScreen
+import net.tyflopodcast.tyflocentrum.ui.screens.RadioHomeScreen
+import net.tyflopodcast.tyflocentrum.ui.screens.SearchScreen
+import net.tyflopodcast.tyflocentrum.ui.screens.SettingsScreen
 
 val LocalAppContainer = staticCompositionLocalOf<AppContainer> {
     error("AppContainer not provided")

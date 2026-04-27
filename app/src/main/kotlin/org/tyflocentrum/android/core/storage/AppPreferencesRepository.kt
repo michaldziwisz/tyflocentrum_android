@@ -1,4 +1,4 @@
-package org.tyflocentrum.android.core.storage
+package net.tyflopodcast.tyflocentrum.core.storage
 
 import android.content.Context
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
@@ -15,12 +15,12 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
-import org.tyflocentrum.android.core.model.AppSettings
-import org.tyflocentrum.android.core.model.ContactDraft
-import org.tyflocentrum.android.core.model.ContentKindLabelPosition
-import org.tyflocentrum.android.core.model.FavoriteItem
-import org.tyflocentrum.android.core.model.PlaybackRateRememberMode
-import org.tyflocentrum.android.core.model.PushPreferences
+import net.tyflopodcast.tyflocentrum.core.model.AppSettings
+import net.tyflopodcast.tyflocentrum.core.model.ContactDraft
+import net.tyflopodcast.tyflocentrum.core.model.ContentKindLabelPosition
+import net.tyflopodcast.tyflocentrum.core.model.FavoriteItem
+import net.tyflopodcast.tyflocentrum.core.model.PlaybackRateRememberMode
+import net.tyflopodcast.tyflocentrum.core.model.PushPreferences
 
 class AppPreferencesRepository(
     context: Context,

@@ -1,4 +1,4 @@
-package org.tyflocentrum.android.core.playback
+package net.tyflopodcast.tyflocentrum.core.playback
 
 import android.os.Bundle
 import androidx.media3.cast.DefaultMediaItemConverter

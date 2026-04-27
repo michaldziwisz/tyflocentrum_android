@@ -1,4 +1,4 @@
-package org.tyflocentrum.android.ui.screens
+package net.tyflopodcast.tyflocentrum.ui.screens
 
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -44,27 +44,27 @@ import androidx.core.net.toUri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import kotlinx.coroutines.launch
-import org.tyflocentrum.android.BuildConfig
-import org.tyflocentrum.android.core.model.AppSettings
-import org.tyflocentrum.android.core.model.ContactDraft
-import org.tyflocentrum.android.core.model.FavoriteArticleOrigin
-import org.tyflocentrum.android.core.model.FavoriteItem
-import org.tyflocentrum.android.core.model.FavoritesFilter
-import org.tyflocentrum.android.core.model.PlaybackRateRememberMode
-import org.tyflocentrum.android.core.model.PushPreferences
-import org.tyflocentrum.android.core.model.toThreadedComments
-import org.tyflocentrum.android.core.model.WpPostDetail
-import org.tyflocentrum.android.ui.AppRoutes
-import org.tyflocentrum.android.ui.LocalAppContainer
-import org.tyflocentrum.android.ui.common.AccessibleHtmlText
-import org.tyflocentrum.android.ui.common.AppScreenScaffold
-import org.tyflocentrum.android.ui.common.ContentListItem
-import org.tyflocentrum.android.ui.common.FilterChipRow
-import org.tyflocentrum.android.ui.common.FullScreenScrollable
-import org.tyflocentrum.android.ui.common.OpenExternalButton
-import org.tyflocentrum.android.ui.common.PlainTextScreen
-import org.tyflocentrum.android.ui.common.StatePane
-import org.tyflocentrum.android.ui.common.ToggleRow
+import net.tyflopodcast.tyflocentrum.BuildConfig
+import net.tyflopodcast.tyflocentrum.core.model.AppSettings
+import net.tyflopodcast.tyflocentrum.core.model.ContactDraft
+import net.tyflopodcast.tyflocentrum.core.model.FavoriteArticleOrigin
+import net.tyflopodcast.tyflocentrum.core.model.FavoriteItem
+import net.tyflopodcast.tyflocentrum.core.model.FavoritesFilter
+import net.tyflopodcast.tyflocentrum.core.model.PlaybackRateRememberMode
+import net.tyflopodcast.tyflocentrum.core.model.PushPreferences
+import net.tyflopodcast.tyflocentrum.core.model.toThreadedComments
+import net.tyflopodcast.tyflocentrum.core.model.WpPostDetail
+import net.tyflopodcast.tyflocentrum.ui.AppRoutes
+import net.tyflopodcast.tyflocentrum.ui.LocalAppContainer
+import net.tyflopodcast.tyflocentrum.ui.common.AccessibleHtmlText
+import net.tyflopodcast.tyflocentrum.ui.common.AppScreenScaffold
+import net.tyflopodcast.tyflocentrum.ui.common.ContentListItem
+import net.tyflopodcast.tyflocentrum.ui.common.FilterChipRow
+import net.tyflopodcast.tyflocentrum.ui.common.FullScreenScrollable
+import net.tyflopodcast.tyflocentrum.ui.common.OpenExternalButton
+import net.tyflopodcast.tyflocentrum.ui.common.PlainTextScreen
+import net.tyflopodcast.tyflocentrum.ui.common.StatePane
+import net.tyflopodcast.tyflocentrum.ui.common.ToggleRow
 
 private const val APP_SUPPORT_URL = "https://michaldziwisz.github.io/tyflocentrum_android/"
 private const val APP_PRIVACY_POLICY_URL = "https://michaldziwisz.github.io/tyflocentrum_android/privacy/"
@@ -108,7 +108,7 @@ fun PodcastDetailScreen(
     val podcast = detail
     val favoriteItem = podcast?.let {
         FavoriteItem.PodcastFavorite(
-            summary = org.tyflocentrum.android.core.model.WpPostSummary(
+            summary = net.tyflopodcast.tyflocentrum.core.model.WpPostSummary(
                 id = it.id,
                 date = it.date,
                 title = it.title,
@@ -237,7 +237,7 @@ fun ArticleDetailScreen(
     val article = detail
     val favoriteItem = article?.let {
         FavoriteItem.ArticleFavorite(
-            summary = org.tyflocentrum.android.core.model.WpPostSummary(
+            summary = net.tyflopodcast.tyflocentrum.core.model.WpPostSummary(
                 id = it.id,
                 date = it.date,
                 title = it.title,
@@ -423,7 +423,7 @@ fun FavoritesScreen(
                         ContentListItem(
                             title = item.summary.title.plainText,
                             date = item.summary.formattedDate,
-                            kind = org.tyflocentrum.android.core.model.ContentKind.PODCAST,
+                            kind = net.tyflopodcast.tyflocentrum.core.model.ContentKind.PODCAST,
                             contentKindLabelPosition = settings.contentKindLabelPosition,
                             onOpen = { navController.navigate(AppRoutes.podcastDetail(item.summary.id)) },
                             onListen = {
@@ -445,7 +445,7 @@ fun FavoritesScreen(
                         ContentListItem(
                             title = item.summary.title.plainText,
                             date = item.summary.formattedDate,
-                            kind = org.tyflocentrum.android.core.model.ContentKind.ARTICLE,
+                            kind = net.tyflopodcast.tyflocentrum.core.model.ContentKind.ARTICLE,
                             contentKindLabelPosition = settings.contentKindLabelPosition,
                             onOpen = { navController.navigate(AppRoutes.articleDetail(item.summary.id, item.origin)) },
                             favoriteLabel = "Usuń z ulubionych",
@@ -510,12 +510,12 @@ fun SettingsScreen(
             Text(text = "Wskazuj typ treści", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             FilterChipRow(
                 options = listOf("Przed", "Po"),
-                selectedIndex = if (settings.contentKindLabelPosition == org.tyflocentrum.android.core.model.ContentKindLabelPosition.BEFORE) 0 else 1,
+                selectedIndex = if (settings.contentKindLabelPosition == net.tyflopodcast.tyflocentrum.core.model.ContentKindLabelPosition.BEFORE) 0 else 1,
                 onSelected = { selected ->
                     scope.launch {
                         appContainer.preferencesRepository.setContentKindLabelPosition(
-                            if (selected == 0) org.tyflocentrum.android.core.model.ContentKindLabelPosition.BEFORE
-                            else org.tyflocentrum.android.core.model.ContentKindLabelPosition.AFTER
+                            if (selected == 0) net.tyflopodcast.tyflocentrum.core.model.ContentKindLabelPosition.BEFORE
+                            else net.tyflopodcast.tyflocentrum.core.model.ContentKindLabelPosition.AFTER
                         )
                     }
                 }

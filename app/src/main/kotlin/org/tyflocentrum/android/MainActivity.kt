@@ -1,11 +1,11 @@
-package org.tyflocentrum.android
+package net.tyflopodcast.tyflocentrum
 
 import android.os.Bundle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.fragment.app.FragmentActivity
-import org.tyflocentrum.android.ui.TyflocentrumApp
-import org.tyflocentrum.android.ui.theme.TyflocentrumTheme
+import net.tyflopodcast.tyflocentrum.ui.TyflocentrumApp
+import net.tyflopodcast.tyflocentrum.ui.theme.TyflocentrumTheme
 
 class MainActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {

@@ -1,4 +1,4 @@
-package org.tyflocentrum.android.ui.screens
+package net.tyflopodcast.tyflocentrum.ui.screens
 
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -39,25 +39,25 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
-import org.tyflocentrum.android.core.model.AppSettings
-import org.tyflocentrum.android.core.model.ContentKind
-import org.tyflocentrum.android.core.model.FavoriteArticleOrigin
-import org.tyflocentrum.android.core.model.FavoriteItem
-import org.tyflocentrum.android.core.model.MagazineParser
-import org.tyflocentrum.android.core.model.NewsItem
-import org.tyflocentrum.android.core.model.SearchItem
-import org.tyflocentrum.android.core.model.SearchRanking
-import org.tyflocentrum.android.core.model.WpPostSummary
-import org.tyflocentrum.android.core.network.NewsScreenCache
-import org.tyflocentrum.android.core.network.PagedScreenCache
-import org.tyflocentrum.android.ui.AppRoutes
-import org.tyflocentrum.android.ui.LocalAppContainer
-import org.tyflocentrum.android.ui.common.Announcement
-import org.tyflocentrum.android.ui.common.AppScreenScaffold
-import org.tyflocentrum.android.ui.common.ContentListItem
-import org.tyflocentrum.android.ui.common.FilterChipRow
-import org.tyflocentrum.android.ui.common.RootDestination
-import org.tyflocentrum.android.ui.common.StatePane
+import net.tyflopodcast.tyflocentrum.core.model.AppSettings
+import net.tyflopodcast.tyflocentrum.core.model.ContentKind
+import net.tyflopodcast.tyflocentrum.core.model.FavoriteArticleOrigin
+import net.tyflopodcast.tyflocentrum.core.model.FavoriteItem
+import net.tyflopodcast.tyflocentrum.core.model.MagazineParser
+import net.tyflopodcast.tyflocentrum.core.model.NewsItem
+import net.tyflopodcast.tyflocentrum.core.model.SearchItem
+import net.tyflopodcast.tyflocentrum.core.model.SearchRanking
+import net.tyflopodcast.tyflocentrum.core.model.WpPostSummary
+import net.tyflopodcast.tyflocentrum.core.network.NewsScreenCache
+import net.tyflopodcast.tyflocentrum.core.network.PagedScreenCache
+import net.tyflopodcast.tyflocentrum.ui.AppRoutes
+import net.tyflopodcast.tyflocentrum.ui.LocalAppContainer
+import net.tyflopodcast.tyflocentrum.ui.common.Announcement
+import net.tyflopodcast.tyflocentrum.ui.common.AppScreenScaffold
+import net.tyflopodcast.tyflocentrum.ui.common.ContentListItem
+import net.tyflopodcast.tyflocentrum.ui.common.FilterChipRow
+import net.tyflopodcast.tyflocentrum.ui.common.RootDestination
+import net.tyflopodcast.tyflocentrum.ui.common.StatePane
 
 private const val MAGAZINE_ROOT_PAGE_ID = 1409
 
@@ -299,7 +299,7 @@ fun ArticlesHomeScreen(
 ) {
     val appContainer = LocalAppContainer.current
     val scope = rememberCoroutineScope()
-    val categories = remember { mutableStateListOf<org.tyflocentrum.android.core.model.Category>() }
+    val categories = remember { mutableStateListOf<net.tyflopodcast.tyflocentrum.core.model.Category>() }
     var page by remember { mutableIntStateOf(1) }
     var totalPages by remember { mutableStateOf<Int?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -395,12 +395,12 @@ private fun CategoriesHomeScreen(
     rootDestination: RootDestination,
     title: String,
     allLabel: String,
-    loadPage: suspend (page: Int, perPage: Int) -> org.tyflocentrum.android.core.model.PagedResult<org.tyflocentrum.android.core.model.Category>,
+    loadPage: suspend (page: Int, perPage: Int) -> net.tyflopodcast.tyflocentrum.core.model.PagedResult<net.tyflopodcast.tyflocentrum.core.model.Category>,
     onAllClick: () -> Unit,
     onCategoryClick: (categoryId: Int, name: String) -> Unit
 ) {
     val scope = rememberCoroutineScope()
-    val categories = remember { mutableStateListOf<org.tyflocentrum.android.core.model.Category>() }
+    val categories = remember { mutableStateListOf<net.tyflopodcast.tyflocentrum.core.model.Category>() }
     var page by remember { mutableIntStateOf(1) }
     var totalPages by remember { mutableStateOf<Int?>(null) }
     var error by remember { mutableStateOf<String?>(null) }

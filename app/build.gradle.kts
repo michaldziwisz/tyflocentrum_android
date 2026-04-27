@@ -15,11 +15,11 @@ if (hasReleaseKeystore) {
 }
 
 android {
-    namespace = "org.tyflocentrum.android"
+    namespace = "net.tyflopodcast.tyflocentrum"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "org.tyflocentrum.android"
+        applicationId = "net.tyflopodcast.tyflocentrum"
         minSdk = 26
         targetSdk = 36
         versionCode = 1

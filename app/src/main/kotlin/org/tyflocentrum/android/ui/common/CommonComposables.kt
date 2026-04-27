@@ -1,4 +1,4 @@
-package org.tyflocentrum.android.ui.common
+package net.tyflopodcast.tyflocentrum.ui.common
 
 import android.content.Intent
 import android.graphics.Typeface
@@ -92,12 +92,12 @@ import androidx.navigation.NavDestination
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavHostController
 import com.google.android.gms.cast.framework.CastButtonFactory
-import org.tyflocentrum.android.core.model.ContentKind
-import org.tyflocentrum.android.core.model.ContentKindLabelPosition
-import org.tyflocentrum.android.core.model.PlayerRequest
-import org.tyflocentrum.android.core.model.accessibilityTitle
-import org.tyflocentrum.android.ui.AppRoutes
-import org.tyflocentrum.android.ui.LocalAppContainer
+import net.tyflopodcast.tyflocentrum.core.model.ContentKind
+import net.tyflopodcast.tyflocentrum.core.model.ContentKindLabelPosition
+import net.tyflopodcast.tyflocentrum.core.model.PlayerRequest
+import net.tyflopodcast.tyflocentrum.core.model.accessibilityTitle
+import net.tyflopodcast.tyflocentrum.ui.AppRoutes
+import net.tyflopodcast.tyflocentrum.ui.LocalAppContainer
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Element
 import org.jsoup.nodes.Node

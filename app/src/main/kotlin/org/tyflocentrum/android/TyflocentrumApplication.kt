@@ -1,9 +1,9 @@
-package org.tyflocentrum.android
+package net.tyflopodcast.tyflocentrum
 
 import androidx.media3.cast.Cast
 import androidx.media3.common.util.UnstableApi
 import android.app.Application
-import org.tyflocentrum.android.core.AppContainer
+import net.tyflopodcast.tyflocentrum.core.AppContainer
 
 @UnstableApi
 class TyflocentrumApplication : Application() {

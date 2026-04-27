@@ -1,4 +1,4 @@
-package org.tyflocentrum.android.core.network
+package net.tyflopodcast.tyflocentrum.core.network
 
 import java.io.File
 import java.io.IOException
@@ -7,15 +7,15 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MultipartBody
 import okhttp3.RequestBody.Companion.asRequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
-import org.tyflocentrum.android.core.model.Availability
-import org.tyflocentrum.android.core.model.Category
-import org.tyflocentrum.android.core.model.Comment
-import org.tyflocentrum.android.core.model.NewsItem
-import org.tyflocentrum.android.core.model.PagedResult
-import org.tyflocentrum.android.core.model.RadioSchedule
-import org.tyflocentrum.android.core.model.ShowNotesData
-import org.tyflocentrum.android.core.model.WpPostDetail
-import org.tyflocentrum.android.core.model.WpPostSummary
+import net.tyflopodcast.tyflocentrum.core.model.Availability
+import net.tyflopodcast.tyflocentrum.core.model.Category
+import net.tyflopodcast.tyflocentrum.core.model.Comment
+import net.tyflopodcast.tyflocentrum.core.model.NewsItem
+import net.tyflopodcast.tyflocentrum.core.model.PagedResult
+import net.tyflopodcast.tyflocentrum.core.model.RadioSchedule
+import net.tyflopodcast.tyflocentrum.core.model.ShowNotesData
+import net.tyflopodcast.tyflocentrum.core.model.WpPostDetail
+import net.tyflopodcast.tyflocentrum.core.model.WpPostSummary
 import retrofit2.Response
 import retrofit2.http.Body
 import retrofit2.http.GET

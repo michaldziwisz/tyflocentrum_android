@@ -3,7 +3,7 @@
 ## 1. Tozsamosc aplikacji
 
 - [ ] nazwa `Tyflocentrum` jest zarezerwowana w Play Console
-- [ ] `applicationId` w repo zgadza sie z wpisem w Play Console: `org.tyflocentrum.android`
+- [ ] `applicationId` w repo zgadza sie z wpisem w Play Console: `net.tyflopodcast.tyflocentrum`
 - [ ] aplikacja jest ustawiona jako bezplatna
 - [ ] `versionCode` zostal zwiekszony na wersje publikacyjna
 

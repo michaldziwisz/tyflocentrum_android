@@ -1,17 +1,17 @@
-package org.tyflocentrum.android.core
+package net.tyflopodcast.tyflocentrum.core
 
 import android.app.Application
 import okhttp3.Cache
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
-import org.tyflocentrum.android.BuildConfig
-import org.tyflocentrum.android.core.network.ContactApiService
-import org.tyflocentrum.android.core.network.TyfloRepository
-import org.tyflocentrum.android.core.network.WpApiService
-import org.tyflocentrum.android.core.playback.CastDiagnosticsLogger
-import org.tyflocentrum.android.core.playback.PlayerController
-import org.tyflocentrum.android.core.storage.AppPreferencesRepository
+import net.tyflopodcast.tyflocentrum.BuildConfig
+import net.tyflopodcast.tyflocentrum.core.network.ContactApiService
+import net.tyflopodcast.tyflocentrum.core.network.TyfloRepository
+import net.tyflopodcast.tyflocentrum.core.network.WpApiService
+import net.tyflopodcast.tyflocentrum.core.playback.CastDiagnosticsLogger
+import net.tyflopodcast.tyflocentrum.core.playback.PlayerController
+import net.tyflopodcast.tyflocentrum.core.storage.AppPreferencesRepository
 import retrofit2.Retrofit
 import retrofit2.create
 import java.util.concurrent.TimeUnit

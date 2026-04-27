@@ -1,4 +1,4 @@
-package org.tyflocentrum.android.ui.screens
+package net.tyflopodcast.tyflocentrum.ui.screens
 
 import android.Manifest
 import android.content.Context
@@ -96,31 +96,31 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
-import org.tyflocentrum.android.core.model.AppSettings
-import org.tyflocentrum.android.core.model.ChapterMarker
-import org.tyflocentrum.android.core.model.Comment
-import org.tyflocentrum.android.core.model.ContactDraft
-import org.tyflocentrum.android.core.model.FavoriteArticleOrigin
-import org.tyflocentrum.android.core.model.FavoriteItem
-import org.tyflocentrum.android.core.model.MagazineParser
-import org.tyflocentrum.android.core.model.PlayerRequest
-import org.tyflocentrum.android.core.model.PlaybackRatePolicy
-import org.tyflocentrum.android.core.model.RelatedLink
-import org.tyflocentrum.android.core.model.ShowNotesData
-import org.tyflocentrum.android.core.model.ShowNotesParser
-import org.tyflocentrum.android.core.model.WpPostDetail
-import org.tyflocentrum.android.core.network.TyfloRepository
-import org.tyflocentrum.android.core.recording.RecorderState
-import org.tyflocentrum.android.core.recording.VoiceRecorderController
-import org.tyflocentrum.android.ui.AppRoutes
-import org.tyflocentrum.android.ui.LocalAppContainer
-import org.tyflocentrum.android.ui.common.AccessibleHtmlText
-import org.tyflocentrum.android.ui.common.AppScreenScaffold
-import org.tyflocentrum.android.ui.common.CastRouteButton
-import org.tyflocentrum.android.ui.common.ContentListItem
-import org.tyflocentrum.android.ui.common.FullScreenScrollable
-import org.tyflocentrum.android.ui.common.LinkifiedPlainText
-import org.tyflocentrum.android.ui.common.StatePane
+import net.tyflopodcast.tyflocentrum.core.model.AppSettings
+import net.tyflopodcast.tyflocentrum.core.model.ChapterMarker
+import net.tyflopodcast.tyflocentrum.core.model.Comment
+import net.tyflopodcast.tyflocentrum.core.model.ContactDraft
+import net.tyflopodcast.tyflocentrum.core.model.FavoriteArticleOrigin
+import net.tyflopodcast.tyflocentrum.core.model.FavoriteItem
+import net.tyflopodcast.tyflocentrum.core.model.MagazineParser
+import net.tyflopodcast.tyflocentrum.core.model.PlayerRequest
+import net.tyflopodcast.tyflocentrum.core.model.PlaybackRatePolicy
+import net.tyflopodcast.tyflocentrum.core.model.RelatedLink
+import net.tyflopodcast.tyflocentrum.core.model.ShowNotesData
+import net.tyflopodcast.tyflocentrum.core.model.ShowNotesParser
+import net.tyflopodcast.tyflocentrum.core.model.WpPostDetail
+import net.tyflopodcast.tyflocentrum.core.network.TyfloRepository
+import net.tyflopodcast.tyflocentrum.core.recording.RecorderState
+import net.tyflopodcast.tyflocentrum.core.recording.VoiceRecorderController
+import net.tyflopodcast.tyflocentrum.ui.AppRoutes
+import net.tyflopodcast.tyflocentrum.ui.LocalAppContainer
+import net.tyflopodcast.tyflocentrum.ui.common.AccessibleHtmlText
+import net.tyflopodcast.tyflocentrum.ui.common.AppScreenScaffold
+import net.tyflopodcast.tyflocentrum.ui.common.CastRouteButton
+import net.tyflopodcast.tyflocentrum.ui.common.ContentListItem
+import net.tyflopodcast.tyflocentrum.ui.common.FullScreenScrollable
+import net.tyflopodcast.tyflocentrum.ui.common.LinkifiedPlainText
+import net.tyflopodcast.tyflocentrum.ui.common.StatePane
 import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
@@ -136,7 +136,7 @@ private enum class VoiceCueMode {
 @Composable
 fun RadioHomeScreen(
     navController: NavHostController,
-    rootDestination: org.tyflocentrum.android.ui.common.RootDestination
+    rootDestination: net.tyflopodcast.tyflocentrum.ui.common.RootDestination
 ) {
     val appContainer = LocalAppContainer.current
     val scope = rememberCoroutineScope()
@@ -747,7 +747,7 @@ fun MagazineIssueScreen(
             pdfUrl = pdf
             appContainer.repository.storeMagazineIssueScreenCache(
                 issueId = issueId,
-                cache = org.tyflocentrum.android.core.network.MagazineIssueScreenCache(
+                cache = net.tyflopodcast.tyflocentrum.core.network.MagazineIssueScreenCache(
                     issue = page,
                     tocItems = orderedToc,
                     pdfUrl = pdf
