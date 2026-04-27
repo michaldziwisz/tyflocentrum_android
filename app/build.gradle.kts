@@ -1,7 +1,17 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.plugin.compose")
     id("org.jetbrains.kotlin.plugin.serialization")
+}
+
+val keystorePropertiesFile = rootProject.file("keystore.properties")
+val keystoreProperties = Properties()
+val hasReleaseKeystore = keystorePropertiesFile.exists()
+
+if (hasReleaseKeystore) {
+    keystorePropertiesFile.inputStream().use(keystoreProperties::load)
 }
 
 android {
@@ -21,9 +31,28 @@ android {
         }
     }
 
+    signingConfigs {
+        if (hasReleaseKeystore) {
+            create("release") {
+                val storeFilePath = keystoreProperties.getProperty("storeFile")
+                    ?: error("Missing storeFile in keystore.properties")
+                storeFile = rootProject.file(storeFilePath)
+                storePassword = keystoreProperties.getProperty("storePassword")
+                    ?: error("Missing storePassword in keystore.properties")
+                keyAlias = keystoreProperties.getProperty("keyAlias")
+                    ?: error("Missing keyAlias in keystore.properties")
+                keyPassword = keystoreProperties.getProperty("keyPassword")
+                    ?: error("Missing keyPassword in keystore.properties")
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
+            if (hasReleaseKeystore) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

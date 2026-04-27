@@ -19,7 +19,8 @@ Przygotowac pierwsza publikacje `Tyflocentrum` do Google Play tak, aby:
 - `compileSdk`: `36`
 - aktualna sciezka publikacji repo: testowe `debug APK` przez GitHub Release
 - aktualna sciezka Cast: domyslny receiver Google `DEFAULT_MEDIA_RECEIVER_APPLICATION_ID`
-- build nie ma skonfigurowanego podpisanego `release` pod Google Play
+- repo ma juz skonfigurowany `release signing` przez lokalny `keystore.properties`
+- lokalny test `bundleRelease` przechodzi poprawnie
 
 ### Aktualne uprawnienia z manifestu
 
@@ -62,16 +63,16 @@ Na podstawie oficjalnych zrodel Google, na dzien 26 kwietnia 2026:
 
 ## Najwazniejsze blokery przed pierwsza publikacja
 
-### 1. Brak podpisanego `release .aab`
+### 1. Trzeba zachowac i zabezpieczyc upload key
 
-Repo publikuje obecnie tylko `debug APK`. To nie wystarczy do pierwszej publikacji w Google Play.
+Repo ma juz technicznie gotowy podpisany `release .aab`, ale przed publikacja trzeba bezpiecznie przechowac lokalny upload keystore i jego hasla.
 
-Do domkniecia:
+W repo jest tylko konfiguracja:
 
-- wygenerowac keystore release,
-- skonfigurowac `signingConfig` dla `release`,
-- uruchomic `bundleRelease`,
-- przejsc na `Play App Signing`.
+- [keystore.properties.example](/mnt/d/projekty/tyflocentrum_android/keystore.properties.example)
+- `app/build.gradle.kts` czytajacy lokalny `keystore.properties`
+
+Sekrety i realny keystore nie powinny trafiac do Git.
 
 ### 2. Brak finalnej ikony aplikacji
 
@@ -196,7 +197,7 @@ Repo ma przygotowane opisy i katalogi:
 - [store/assets/feature-graphic/README.md](/mnt/d/projekty/tyflocentrum_android/store/assets/feature-graphic/README.md)
 - [store/assets/screenshots/README.md](/mnt/d/projekty/tyflocentrum_android/store/assets/screenshots/README.md)
 
-### 7. Skonfiguruj podpisywanie i `bundleRelease`
+### 7. Utrzymuj podpisywanie i `bundleRelease`
 
 Docelowy build do Play:
 
@@ -204,11 +205,11 @@ Docelowy build do Play:
 ./gradlew bundleRelease
 ```
 
-Ale dopiero po:
+Repo jest juz przygotowane pod ten krok. Do utrzymania zostaje:
 
-- dodaniu keystore,
-- dodaniu danych podpisu do bezpiecznej konfiguracji lokalnej lub CI,
-- zweryfikowaniu, ze `versionCode` rośnie przy kazdym wydaniu.
+- bezpieczne przechowywanie upload keystore,
+- dodanie danych podpisu do bezpiecznej konfiguracji lokalnej lub CI,
+- zweryfikowanie, ze `versionCode` rośnie przy kazdym wydaniu.
 
 ### 8. Wrzuc pierwsza wersje na `Internal testing`
 

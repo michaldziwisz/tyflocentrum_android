@@ -9,3 +9,5 @@
 /.cxx/
 app/build/
 *.keystore
+keystore.properties
+keys/
