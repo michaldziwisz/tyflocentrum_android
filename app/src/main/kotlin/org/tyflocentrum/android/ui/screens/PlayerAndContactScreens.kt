@@ -6,9 +6,6 @@ import android.content.Intent
 import android.media.AudioManager
 import android.media.ToneGenerator
 import android.os.Build
-import android.os.Bundle
-import android.speech.tts.TextToSpeech
-import android.speech.tts.UtteranceProgressListener
 import android.view.HapticFeedbackConstants
 import android.view.KeyEvent
 import android.view.MotionEvent
@@ -89,12 +86,10 @@ import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
-import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import net.tyflopodcast.tyflocentrum.core.model.AppSettings
 import net.tyflopodcast.tyflocentrum.core.model.ChapterMarker
@@ -122,16 +117,8 @@ import net.tyflopodcast.tyflocentrum.ui.common.FullScreenScrollable
 import net.tyflopodcast.tyflocentrum.ui.common.LinkifiedPlainText
 import net.tyflopodcast.tyflocentrum.ui.common.StatePane
 import java.util.Locale
-import java.util.UUID
-import java.util.concurrent.ConcurrentHashMap
-import kotlin.coroutines.resume
 
 private const val RADIO_STREAM_URL = "https://radio.tyflopodcast.net/hls/stream.m3u8"
-
-private enum class VoiceCueMode {
-    SPOKEN_PROMPT,
-    TONE_ONLY
-}
 
 @Composable
 fun RadioHomeScreen(
@@ -990,7 +977,6 @@ fun ContactVoiceMessageScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val nameFocusRequester = remember { FocusRequester() }
     val toneGenerator = remember { ToneGenerator(AudioManager.STREAM_NOTIFICATION, 70) }
-    val voicePromptSpeaker = remember { VoicePromptSpeaker(context) }
     var name by rememberSaveable { mutableStateOf("") }
     var didEditName by rememberSaveable { mutableStateOf(false) }
     var isSending by remember { mutableStateOf(false) }
@@ -1015,7 +1001,6 @@ fun ContactVoiceMessageScreen(
         assistedStartJob?.cancel()
         assistedStartJob = null
         isAwaitingCue = false
-        voicePromptSpeaker.stop()
     }
 
     fun beginRecordingNow(withHaptic: Boolean = false): Boolean {
@@ -1041,7 +1026,7 @@ fun ContactVoiceMessageScreen(
         return stopped
     }
 
-    fun launchPromptedRecording(cueMode: VoiceCueMode = VoiceCueMode.SPOKEN_PROMPT) {
+    fun launchPromptedRecording() {
         if (isAwaitingCue || recorderState.isProcessing || isSending) return
         cancelPendingAssistedStart()
         holdStartJob?.cancel()
@@ -1051,16 +1036,6 @@ fun ContactVoiceMessageScreen(
         appContainer.playerController.pause()
         assistedStartJob = scope.launch {
             try {
-                if (cueMode == VoiceCueMode.SPOKEN_PROMPT) {
-                    val promptPlayed = voicePromptSpeaker.speak("Mów po sygnale")
-                    if (promptPlayed) {
-                        delay(120)
-                    } else {
-                        delay(250)
-                    }
-                } else {
-                    delay(450)
-                }
                 playStartCue()
                 beginRecordingNow(withHaptic = true)
             } finally {
@@ -1086,7 +1061,7 @@ fun ContactVoiceMessageScreen(
         contract = ActivityResultContracts.RequestPermission()
     ) { granted ->
         if (granted) {
-            launchPromptedRecording(VoiceCueMode.SPOKEN_PROMPT)
+            launchPromptedRecording()
         } else {
             scope.launch { snackbarHostState.showSnackbar("Bez dostępu do mikrofonu nie można nagrać głosówki.") }
         }
@@ -1098,19 +1073,25 @@ fun ContactVoiceMessageScreen(
             if (recorderState.state == RecorderState.RECORDING) {
                 stopCurrentRecording()
             } else if (hasRecordPermission(context)) {
-                launchPromptedRecording(VoiceCueMode.TONE_ONLY)
+                launchPromptedRecording()
             } else {
                 permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
             }
         }
     )
 
+    LaunchedEffect(isAwaitingCue, recorderState.state, recorderState.isProcessing) {
+        view.keepScreenOn = isAwaitingCue ||
+            recorderState.state == RecorderState.RECORDING ||
+            recorderState.isProcessing
+    }
+
     DisposableEffect(Unit) {
         onDispose {
             holdStartJob?.cancel()
             cancelPendingAssistedStart()
             runCatching { toneGenerator.release() }
-            voicePromptSpeaker.shutdown()
+            view.keepScreenOn = false
             recorder.reset()
         }
     }
@@ -1173,7 +1154,7 @@ fun ContactVoiceMessageScreen(
             )
 
             Text(
-                text = "TalkBack: użyj przycisku Rozpocznij/Zatrzymaj nagrywanie albo gestu 2 palce 2 razy w ekran. Najpierw usłyszysz komunikat, potem osobny sygnał i dopiero wtedy zacznie się nagrywanie. Dla wygody dotykowej możesz też przytrzymać pole poniżej i przeciągnąć w górę, aby zablokować nagrywanie.",
+                text = "TalkBack: użyj przycisku Rozpocznij/Zatrzymaj nagrywanie albo gestu 2 palce 2 razy w ekran. Po uruchomieniu nagrywania usłyszysz sygnał, a start i zatrzymanie będą potwierdzane także wibracją. Dla wygody dotykowej możesz też przytrzymać pole poniżej i przeciągnąć w górę, aby zablokować nagrywanie.",
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -1185,7 +1166,7 @@ fun ContactVoiceMessageScreen(
                     if (recorderState.state == RecorderState.RECORDING) {
                         stopCurrentRecording()
                     } else if (hasRecordPermission(context)) {
-                        launchPromptedRecording(VoiceCueMode.SPOKEN_PROMPT)
+                        launchPromptedRecording()
                     } else {
                         permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
                     }
@@ -1242,11 +1223,22 @@ fun ContactVoiceMessageScreen(
                                 }
                                 true
                             }
-                            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                            MotionEvent.ACTION_UP -> {
                                 holdStartJob?.cancel()
                                 holdStartJob = null
                                 if (recorderState.state == RecorderState.RECORDING && !holdLocked) {
                                     stopCurrentRecording(withHaptic = true)
+                                }
+                                true
+                            }
+                            MotionEvent.ACTION_CANCEL -> {
+                                holdStartJob?.cancel()
+                                holdStartJob = null
+                                if (recorderState.state == RecorderState.RECORDING && !holdLocked) {
+                                    holdLocked = true
+                                    scope.launch {
+                                        snackbarHostState.showSnackbar("Nagrywanie trwa dalej. Użyj przycisku zatrzymania.")
+                                    }
                                 }
                                 true
                             }
@@ -1376,85 +1368,6 @@ private fun RecorderStatusCard(
                 style = MaterialTheme.typography.bodyLarge
             )
         }
-    }
-}
-
-private class VoicePromptSpeaker(context: Context) {
-    private val appContext = context.applicationContext
-    private val initResult = CompletableDeferred<Boolean>()
-    private val pendingUtterances = ConcurrentHashMap<String, kotlinx.coroutines.CancellableContinuation<Boolean>>()
-    private var textToSpeech: TextToSpeech? = null
-
-    init {
-        textToSpeech = TextToSpeech(appContext) { status ->
-            val tts = textToSpeech
-            if (status != TextToSpeech.SUCCESS || tts == null) {
-                initResult.complete(false)
-                return@TextToSpeech
-            }
-            runCatching {
-                tts.language = Locale("pl", "PL")
-                tts.setSpeechRate(1f)
-                tts.setOnUtteranceProgressListener(
-                    object : UtteranceProgressListener() {
-                        override fun onStart(utteranceId: String?) = Unit
-
-                        override fun onDone(utteranceId: String?) {
-                            utteranceId?.let { completeUtterance(it, true) }
-                        }
-
-                        @Deprecated("Deprecated in Java")
-                        override fun onError(utteranceId: String?) {
-                            utteranceId?.let { completeUtterance(it, false) }
-                        }
-
-                        override fun onError(utteranceId: String?, errorCode: Int) {
-                            utteranceId?.let { completeUtterance(it, false) }
-                        }
-                    }
-                )
-            }
-            initResult.complete(true)
-        }
-    }
-
-    suspend fun speak(text: String): Boolean {
-        if (!initResult.await()) return false
-        val tts = textToSpeech ?: return false
-        return suspendCancellableCoroutine { continuation ->
-            val utteranceId = UUID.randomUUID().toString()
-            pendingUtterances[utteranceId] = continuation
-            val result = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                tts.speak(text, TextToSpeech.QUEUE_FLUSH, Bundle(), utteranceId)
-            } else {
-                @Suppress("DEPRECATION")
-                tts.speak(text, TextToSpeech.QUEUE_FLUSH, null)
-            }
-            if (result == TextToSpeech.ERROR) {
-                pendingUtterances.remove(utteranceId)
-                continuation.resume(false)
-            } else {
-                continuation.invokeOnCancellation {
-                    pendingUtterances.remove(utteranceId)
-                    runCatching { tts.stop() }
-                }
-            }
-        }
-    }
-
-    fun stop() {
-        pendingUtterances.keys.toList().forEach { completeUtterance(it, false) }
-        runCatching { textToSpeech?.stop() }
-    }
-
-    fun shutdown() {
-        stop()
-        runCatching { textToSpeech?.shutdown() }
-        textToSpeech = null
-    }
-
-    private fun completeUtterance(utteranceId: String, result: Boolean) {
-        pendingUtterances.remove(utteranceId)?.resume(result)
     }
 }
 
