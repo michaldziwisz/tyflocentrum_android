@@ -2,10 +2,12 @@ package net.tyflopodcast.tyflocentrum.ui.theme
 
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 
 // a11y: needs manual verification - sprawdz kontrast niestandardowej palety i wskaznikow fokusu na realnym urzadzeniu.
 private val LightColors = lightColorScheme(
@@ -27,10 +29,10 @@ private val LightColors = lightColorScheme(
 )
 
 private val DarkColors = darkColorScheme(
-    primary = Color(0xFF7BD9C0),
-    onPrimary = Color(0xFF00382D),
-    primaryContainer = Color(0xFF005345),
-    onPrimaryContainer = Color(0xFFA2F5DA),
+    primary = Color(0xFFF0C85C),
+    onPrimary = Color(0xFF171100),
+    primaryContainer = Color(0xFF6A5300),
+    onPrimaryContainer = Color(0xFFFFE7A2),
     secondary = Color(0xFFF0BE5C),
     onSecondary = Color(0xFF312100),
     background = Color(0xFF141310),
@@ -44,6 +46,12 @@ private val DarkColors = darkColorScheme(
     onError = Color(0xFF690005)
 )
 
+private val AppTypography = Typography().run {
+    copy(
+        labelLarge = labelLarge.copy(fontWeight = FontWeight.Bold)
+    )
+}
+
 @Composable
 fun TyflocentrumTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
@@ -51,6 +59,7 @@ fun TyflocentrumTheme(
 ) {
     MaterialTheme(
         colorScheme = if (darkTheme) DarkColors else LightColors,
+        typography = AppTypography,
         content = content
     )
 }
