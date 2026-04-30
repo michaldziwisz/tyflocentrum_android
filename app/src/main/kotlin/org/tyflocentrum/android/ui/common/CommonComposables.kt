@@ -295,6 +295,7 @@ private fun MiniPlayerBar(
     onTogglePlayback: () -> Unit,
     onOpenPlayer: () -> Unit
 ) {
+    val playbackActionLabel = if (playWhenReady) "Pauza" else "Odtwarzaj"
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -330,10 +331,16 @@ private fun MiniPlayerBar(
             TextButton(onClick = onOpenPlayer) {
                 Text("Otwórz")
             }
-            IconButton(onClick = onTogglePlayback) {
+            IconButton(
+                modifier = Modifier.semantics {
+                    contentDescription = playbackActionLabel
+                    onClick(label = playbackActionLabel, action = null)
+                },
+                onClick = onTogglePlayback
+            ) {
                 Icon(
                     imageVector = if (playWhenReady) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                    contentDescription = if (playWhenReady) "Pauza" else "Odtwarzaj"
+                    contentDescription = null
                 )
             }
         }
