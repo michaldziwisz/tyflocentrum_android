@@ -8,6 +8,7 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
 
 // a11y: needs manual verification - sprawdz kontrast niestandardowej palety i wskaznikow fokusu na realnym urzadzeniu.
 private val LightColors = lightColorScheme(
@@ -48,7 +49,11 @@ private val DarkColors = darkColorScheme(
 
 private val AppTypography = Typography().run {
     copy(
-        labelLarge = labelLarge.copy(fontWeight = FontWeight.Bold)
+        labelLarge = labelLarge.copy(
+            fontSize = 16.sp,
+            fontWeight = FontWeight.ExtraBold,
+            lineHeight = 22.sp
+        )
     )
 }
 
