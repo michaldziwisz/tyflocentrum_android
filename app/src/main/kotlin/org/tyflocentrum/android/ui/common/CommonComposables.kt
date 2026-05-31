@@ -603,12 +603,23 @@ private fun collectAccessibleHtmlBlocks(
                         }
                     )
                 }
-                "p" -> addHtmlBlock(
-                    blocks = blocks,
-                    html = node.outerHtml(),
-                    style = AccessibleHtmlBlockStyle.BODY,
-                    textSizeSp = 18f
-                )
+                "p" -> {
+                    if (node.select("br").isNotEmpty()) {
+                        addBreakSeparatedHtmlBlocks(
+                            blocks = blocks,
+                            element = node,
+                            style = AccessibleHtmlBlockStyle.BODY,
+                            textSizeSp = 18f
+                        )
+                    } else {
+                        addHtmlBlock(
+                            blocks = blocks,
+                            html = node.outerHtml(),
+                            style = AccessibleHtmlBlockStyle.BODY,
+                            textSizeSp = 18f
+                        )
+                    }
+                }
                 "blockquote" -> addHtmlBlock(
                     blocks = blocks,
                     html = node.outerHtml(),
@@ -726,6 +737,47 @@ private fun addHtmlBlock(
         style = style,
         textSizeSp = textSizeSp
     )
+}
+
+private fun addBreakSeparatedHtmlBlocks(
+    blocks: MutableList<AccessibleHtmlBlock>,
+    element: Element,
+    style: AccessibleHtmlBlockStyle,
+    textSizeSp: Float
+) {
+    val current = StringBuilder()
+    var emitted = false
+
+    fun flush() {
+        val html = current.toString().trim()
+        current.clear()
+        if (Jsoup.parseBodyFragment(html).text().isBlank()) return
+        emitted = true
+        addHtmlBlock(
+            blocks = blocks,
+            html = "<p>$html</p>",
+            style = style,
+            textSizeSp = textSizeSp
+        )
+    }
+
+    element.childNodes().forEach { child ->
+        if (child is Element && child.normalName() == "br") {
+            flush()
+        } else {
+            current.append(child.outerHtml())
+        }
+    }
+    flush()
+
+    if (!emitted) {
+        addHtmlBlock(
+            blocks = blocks,
+            html = element.outerHtml(),
+            style = style,
+            textSizeSp = textSizeSp
+        )
+    }
 }
 
 private fun sanitizeHtmlFragment(html: String): String {

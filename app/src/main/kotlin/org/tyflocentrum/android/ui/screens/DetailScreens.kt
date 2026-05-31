@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.OpenInBrowser
@@ -22,11 +23,14 @@ import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -34,10 +38,15 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat.startActivity
 import androidx.core.net.toUri
@@ -46,12 +55,15 @@ import androidx.navigation.NavHostController
 import kotlinx.coroutines.launch
 import net.tyflopodcast.tyflocentrum.BuildConfig
 import net.tyflopodcast.tyflocentrum.core.model.AppSettings
+import net.tyflopodcast.tyflocentrum.core.model.Comment
+import net.tyflopodcast.tyflocentrum.core.model.CommentDraft
 import net.tyflopodcast.tyflocentrum.core.model.ContactDraft
 import net.tyflopodcast.tyflocentrum.core.model.FavoriteArticleOrigin
 import net.tyflopodcast.tyflocentrum.core.model.FavoriteItem
 import net.tyflopodcast.tyflocentrum.core.model.FavoritesFilter
 import net.tyflopodcast.tyflocentrum.core.model.PlaybackRateRememberMode
 import net.tyflopodcast.tyflocentrum.core.model.PushPreferences
+import net.tyflopodcast.tyflocentrum.core.model.ThreadedComment
 import net.tyflopodcast.tyflocentrum.core.model.toThreadedComments
 import net.tyflopodcast.tyflocentrum.core.model.WpPostDetail
 import net.tyflopodcast.tyflocentrum.ui.AppRoutes
@@ -62,7 +74,6 @@ import net.tyflopodcast.tyflocentrum.ui.common.ContentListItem
 import net.tyflopodcast.tyflocentrum.ui.common.FilterChipRow
 import net.tyflopodcast.tyflocentrum.ui.common.FullScreenScrollable
 import net.tyflopodcast.tyflocentrum.ui.common.OpenExternalButton
-import net.tyflopodcast.tyflocentrum.ui.common.PlainTextScreen
 import net.tyflopodcast.tyflocentrum.ui.common.StatePane
 import net.tyflopodcast.tyflocentrum.ui.common.ToggleRow
 
@@ -78,12 +89,14 @@ fun PodcastDetailScreen(
     val appContainer = LocalAppContainer.current
     val cachedDetail = remember(podcastId) { appContainer.repository.peekPodcastDetail(podcastId) }
     val cachedCommentsCount = remember(podcastId) { appContainer.repository.peekCommentsCount(podcastId) }
+    val cachedTextVersionReference = remember(podcastId) { appContainer.repository.peekPodcastTextVersionReference(podcastId) }
     val favorites by appContainer.preferencesRepository.favoritesFlow.collectAsStateWithLifecycle(emptyList())
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
     var detail by remember(podcastId) { mutableStateOf(cachedDetail) }
     var commentsCount by remember(podcastId) { mutableStateOf(cachedCommentsCount) }
+    var textVersionReference by remember(podcastId) { mutableStateOf(cachedTextVersionReference) }
     var error by remember { mutableStateOf<String?>(null) }
     var isLoading by remember(podcastId) { mutableStateOf(cachedDetail == null) }
 
@@ -94,10 +107,12 @@ fun PodcastDetailScreen(
         runCatching {
             val loaded = appContainer.repository.fetchPodcastDetail(podcastId)
             val count = runCatching { appContainer.repository.fetchCommentsCount(podcastId) }.getOrNull()
-            loaded to count
-        }.onSuccess { (loaded, count) ->
+            val textVersion = runCatching { appContainer.repository.fetchPodcastTextVersionReference(podcastId) }.getOrNull()
+            Triple(loaded, count, textVersion)
+        }.onSuccess { (loaded, count, textVersion) ->
             detail = loaded
             commentsCount = count
+            textVersionReference = textVersion
             error = null
         }.onFailure {
             error = "Nie udało się pobrać szczegółów podcastu."
@@ -189,7 +204,63 @@ fun PodcastDetailScreen(
                     Text("Komentarze${commentsCount?.let { ": $it" } ?: ""}")
                 }
 
-                PlainTextScreen(text = podcast.content.plainText)
+                if (textVersionReference != null) {
+                    Button(
+                        modifier = Modifier.fillMaxWidth(),
+                        onClick = { navController.navigate(AppRoutes.podcastTextVersion(podcast.id)) }
+                    ) {
+                        Text("Wersja tekstowa audycji")
+                    }
+                }
+
+                AccessibleHtmlText(html = podcast.content.rendered)
+            }
+        }
+    }
+}
+
+@Composable
+fun PodcastTextVersionScreen(
+    navController: NavHostController,
+    postId: Int
+) {
+    val appContainer = LocalAppContainer.current
+    val cachedTextVersion = remember(postId) { appContainer.repository.peekPodcastTextVersion(postId) }
+    var textVersion by remember(postId) { mutableStateOf(cachedTextVersion) }
+    var error by remember(postId) { mutableStateOf<String?>(null) }
+    var isLoading by remember(postId) { mutableStateOf(cachedTextVersion == null) }
+
+    LaunchedEffect(postId) {
+        if (textVersion == null) {
+            isLoading = true
+        }
+        runCatching {
+            appContainer.repository.fetchPodcastTextVersion(postId)
+        }.onSuccess { loaded ->
+            textVersion = loaded
+            error = if (loaded == null) "Ten odcinek nie ma tekstowej wersji audycji." else null
+        }.onFailure {
+            error = "Nie udało się pobrać tekstowej wersji audycji."
+        }
+        isLoading = false
+    }
+
+    AppScreenScaffold(
+        navController = navController,
+        title = textVersion?.title?.plainText ?: "Wersja tekstowa"
+    ) { padding ->
+        if (isLoading && textVersion == null) {
+            DetailStatePane(padding, "Ładowanie tekstowej wersji audycji…", true)
+        } else if (error != null && textVersion == null) {
+            DetailStatePane(padding, error.orEmpty(), false)
+        } else if (textVersion != null) {
+            FullScreenScrollable(modifier = Modifier.padding(detailPadding(padding))) {
+                Text(
+                    text = textVersion!!.formattedDate,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                AccessibleHtmlText(html = textVersion!!.content.rendered)
             }
         }
     }
@@ -308,10 +379,49 @@ fun PodcastCommentsScreen(
 ) {
     val appContainer = LocalAppContainer.current
     val cachedComments = remember(postId) { appContainer.repository.peekComments(postId).orEmpty() }
+    val commentDraft by appContainer.preferencesRepository.commentDraftFlow.collectAsStateWithLifecycle(CommentDraft())
+    val scope = rememberCoroutineScope()
+    val listState = rememberLazyListState()
+    val snackbarHostState = remember { SnackbarHostState() }
+    val authorNameFocusRequester = remember { FocusRequester() }
+    val authorEmailFocusRequester = remember { FocusRequester() }
+    val contentFocusRequester = remember { FocusRequester() }
     var comments by remember(postId) { mutableStateOf(cachedComments) }
     var isLoading by remember(postId) { mutableStateOf(cachedComments.isEmpty()) }
-    var error by remember { mutableStateOf<String?>(null) }
+    var listError by remember { mutableStateOf<String?>(null) }
+    var authorName by rememberSaveable(postId) { mutableStateOf("") }
+    var authorEmail by rememberSaveable(postId) { mutableStateOf("") }
+    var content by rememberSaveable(postId) { mutableStateOf("") }
+    var didEditAuthorName by rememberSaveable(postId) { mutableStateOf(false) }
+    var didEditAuthorEmail by rememberSaveable(postId) { mutableStateOf(false) }
+    var isCommentFormVisible by rememberSaveable(postId) { mutableStateOf(false) }
+    var authorNameError by remember { mutableStateOf<String?>(null) }
+    var authorEmailError by remember { mutableStateOf<String?>(null) }
+    var contentError by remember { mutableStateOf<String?>(null) }
+    var formMessage by remember { mutableStateOf<String?>(null) }
+    var isSending by remember { mutableStateOf(false) }
+    var replyTarget by remember { mutableStateOf<Comment?>(null) }
     val threadedComments = remember(comments) { comments.toThreadedComments() }
+
+    LaunchedEffect(commentDraft.authorName) {
+        if (!didEditAuthorName) {
+            authorName = commentDraft.authorName
+        }
+    }
+
+    LaunchedEffect(commentDraft.authorEmail) {
+        if (!didEditAuthorEmail) {
+            authorEmail = commentDraft.authorEmail
+        }
+    }
+
+    LaunchedEffect(authorNameError, authorEmailError, contentError) {
+        when {
+            authorNameError != null -> authorNameFocusRequester.requestFocus()
+            authorEmailError != null -> authorEmailFocusRequester.requestFocus()
+            contentError != null -> contentFocusRequester.requestFocus()
+        }
+    }
 
     LaunchedEffect(postId) {
         if (comments.isEmpty()) {
@@ -321,65 +431,321 @@ fun PodcastCommentsScreen(
             appContainer.repository.fetchComments(postId)
         }.onSuccess {
             comments = it
-            error = null
+            listError = null
         }.onFailure {
-            error = "Nie udało się pobrać komentarzy."
+            listError = "Nie udało się pobrać komentarzy."
         }
         isLoading = false
     }
 
     AppScreenScaffold(
         navController = navController,
-        title = "Komentarze"
+        title = "Komentarze",
+        snackbarHostState = snackbarHostState
     ) { padding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
+            state = listState,
             contentPadding = detailPadding(padding),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+            item {
+                if (isCommentFormVisible) {
+                    CommentFormCard(
+                        authorName = authorName,
+                        onAuthorNameChange = {
+                            didEditAuthorName = true
+                            authorName = it
+                            authorNameError = null
+                            formMessage = null
+                        },
+                        authorEmail = authorEmail,
+                        onAuthorEmailChange = {
+                            didEditAuthorEmail = true
+                            authorEmail = it
+                            authorEmailError = null
+                            formMessage = null
+                        },
+                        content = content,
+                        onContentChange = {
+                            content = it
+                            contentError = null
+                            formMessage = null
+                        },
+                        replyTarget = replyTarget,
+                        onCancelReply = {
+                            replyTarget = null
+                            formMessage = null
+                        },
+                        onCancelForm = {
+                            replyTarget = null
+                            formMessage = null
+                            authorNameError = null
+                            authorEmailError = null
+                            contentError = null
+                            isCommentFormVisible = false
+                        },
+                        authorNameError = authorNameError,
+                        authorEmailError = authorEmailError,
+                        contentError = contentError,
+                        formMessage = formMessage,
+                        isSending = isSending,
+                        authorNameFocusRequester = authorNameFocusRequester,
+                        authorEmailFocusRequester = authorEmailFocusRequester,
+                        contentFocusRequester = contentFocusRequester,
+                        onSubmit = {
+                            val trimmedAuthorName = authorName.trim()
+                            val trimmedAuthorEmail = authorEmail.trim()
+                            val trimmedContent = content.trim()
+                            authorNameError = if (trimmedAuthorName.isBlank()) "Wpisz imię lub nick." else null
+                            authorEmailError = when {
+                                trimmedAuthorEmail.isBlank() -> "Wpisz adres e-mail."
+                                !trimmedAuthorEmail.isLikelyEmailAddress() -> "Wpisz poprawny adres e-mail."
+                                else -> null
+                            }
+                            contentError = if (trimmedContent.isBlank()) "Wpisz treść komentarza." else null
+                            if (authorNameError != null || authorEmailError != null || contentError != null) {
+                                formMessage = "Popraw pola oznaczone jako błędne."
+                                return@CommentFormCard
+                            }
+                            scope.launch {
+                                isSending = true
+                                formMessage = null
+                                val result = appContainer.repository.publishComment(
+                                    postId = postId,
+                                    authorName = trimmedAuthorName,
+                                    authorEmail = trimmedAuthorEmail,
+                                    content = trimmedContent,
+                                    parentId = replyTarget?.id ?: 0
+                                )
+                                result.onSuccess { published ->
+                                    appContainer.preferencesRepository.updateCommentDraft(
+                                        authorName = trimmedAuthorName,
+                                        authorEmail = trimmedAuthorEmail
+                                    )
+                                    content = ""
+                                    replyTarget = null
+                                    isCommentFormVisible = false
+                                    formMessage = published.message
+                                    snackbarHostState.showSnackbar(published.message)
+                                    comments = runCatching {
+                                        appContainer.repository.fetchComments(postId, refresh = true)
+                                    }.getOrDefault(comments)
+                                }.onFailure {
+                                    val message = it.message ?: "Nie udało się wysłać komentarza."
+                                    formMessage = message
+                                    snackbarHostState.showSnackbar(message)
+                                }
+                                isSending = false
+                            }
+                        }
+                    )
+                } else {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        formMessage?.let { StatePane(message = it) }
+                        Button(
+                            modifier = Modifier.fillMaxWidth(),
+                            onClick = {
+                                formMessage = null
+                                authorNameError = null
+                                authorEmailError = null
+                                contentError = null
+                                isCommentFormVisible = true
+                            }
+                        ) {
+                            Text("Dodaj komentarz")
+                        }
+                    }
+                }
+            }
             if (isLoading && comments.isEmpty()) {
                 item { StatePane(message = "Ładowanie komentarzy…", showLoading = true) }
             }
-            if (error != null && comments.isEmpty()) {
-                item { StatePane(message = error.orEmpty()) }
+            if (listError != null && comments.isEmpty()) {
+                item { StatePane(message = listError.orEmpty()) }
+            }
+            if (!isLoading && listError.isNullOrBlank() && comments.isEmpty()) {
+                item { StatePane(message = "Brak komentarzy. Możesz dodać pierwszy komentarz.") }
             }
             items(threadedComments, key = { it.comment.id }) { threadedComment ->
-                val comment = threadedComment.comment
+                CommentCard(
+                    threadedComment = threadedComment,
+                    onReply = { comment ->
+                        replyTarget = comment
+                        isCommentFormVisible = true
+                        formMessage = "Odpowiadasz na komentarz użytkownika ${comment.authorName}."
+                        scope.launch {
+                            listState.animateScrollToItem(0)
+                            contentFocusRequester.requestFocus()
+                        }
+                    }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun CommentFormCard(
+    authorName: String,
+    onAuthorNameChange: (String) -> Unit,
+    authorEmail: String,
+    onAuthorEmailChange: (String) -> Unit,
+    content: String,
+    onContentChange: (String) -> Unit,
+    replyTarget: Comment?,
+    onCancelReply: () -> Unit,
+    onCancelForm: () -> Unit,
+    authorNameError: String?,
+    authorEmailError: String?,
+    contentError: String?,
+    formMessage: String?,
+    isSending: Boolean,
+    authorNameFocusRequester: FocusRequester,
+    authorEmailFocusRequester: FocusRequester,
+    contentFocusRequester: FocusRequester,
+    onSubmit: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Text("Dodaj komentarz", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Text(
+                text = "Adres e-mail jest wymagany przez WordPress i nie będzie publicznie pokazywany.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            if (replyTarget != null) {
                 Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(start = (threadedComment.depth.coerceAtMost(4) * 16).dp),
-                    colors = androidx.compose.material3.CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surface
-                    )
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
                 ) {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                            .padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        Text(text = comment.authorName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                        if (threadedComment.parentAuthorName != null) {
-                            Text(
-                                text = "Odpowiedź na komentarz: ${threadedComment.parentAuthorName}",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                        Text(
+                            text = "Odpowiedź na komentarz użytkownika ${replyTarget.authorName}",
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        TextButton(onClick = onCancelReply) {
+                            Text("Anuluj odpowiedź")
                         }
-                        comment.formattedDate?.let { formattedDate ->
-                            Text(
-                                text = formattedDate,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        AccessibleHtmlText(html = comment.content.rendered)
                     }
                 }
             }
+            formMessage?.let { StatePane(message = it) }
+            OutlinedTextField(
+                value = authorName,
+                onValueChange = onAuthorNameChange,
+                label = { Text("Imię lub nick") },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .focusRequester(authorNameFocusRequester),
+                singleLine = true,
+                isError = authorNameError != null,
+                supportingText = {
+                    authorNameError?.let { Text(it) }
+                }
+            )
+            OutlinedTextField(
+                value = authorEmail,
+                onValueChange = onAuthorEmailChange,
+                label = { Text("E-mail") },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .focusRequester(authorEmailFocusRequester),
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                isError = authorEmailError != null,
+                supportingText = {
+                    authorEmailError?.let { Text(it) }
+                }
+            )
+            OutlinedTextField(
+                value = content,
+                onValueChange = onContentChange,
+                label = { Text("Komentarz") },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .focusRequester(contentFocusRequester),
+                minLines = 4,
+                isError = contentError != null,
+                supportingText = {
+                    contentError?.let { Text(it) }
+                }
+            )
+            Button(
+                modifier = Modifier.fillMaxWidth(),
+                onClick = onSubmit,
+                enabled = !isSending
+            ) {
+                Text(if (isSending) "Wysyłanie…" else "Wyślij komentarz")
+            }
+            TextButton(
+                onClick = onCancelForm,
+                enabled = !isSending
+            ) {
+                Text("Anuluj")
+            }
         }
     }
+}
+
+@Composable
+private fun CommentCard(
+    threadedComment: ThreadedComment,
+    onReply: (Comment) -> Unit
+) {
+    val comment = threadedComment.comment
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = (threadedComment.depth.coerceAtMost(4) * 16).dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        )
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Text(text = comment.authorName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            if (threadedComment.parentAuthorName != null) {
+                Text(
+                    text = "Odpowiedź na komentarz: ${threadedComment.parentAuthorName}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            comment.formattedDate?.let { formattedDate ->
+                Text(
+                    text = formattedDate,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            AccessibleHtmlText(html = comment.content.rendered)
+            TextButton(onClick = { onReply(comment) }) {
+                Text("Odpowiedz")
+            }
+        }
+    }
+}
+
+private fun String.isLikelyEmailAddress(): Boolean {
+    return Regex("""^[^@\s]+@[^@\s]+\.[^@\s]+$""").matches(this)
 }
 
 @Composable

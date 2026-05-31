@@ -29,6 +29,7 @@ import net.tyflopodcast.tyflocentrum.ui.screens.PlayerRelatedLinksScreen
 import net.tyflopodcast.tyflocentrum.ui.screens.PodcastCommentsScreen
 import net.tyflopodcast.tyflocentrum.ui.screens.PodcastDetailScreen
 import net.tyflopodcast.tyflocentrum.ui.screens.PodcastListScreen
+import net.tyflopodcast.tyflocentrum.ui.screens.PodcastTextVersionScreen
 import net.tyflopodcast.tyflocentrum.ui.screens.PodcastsHomeScreen
 import net.tyflopodcast.tyflocentrum.ui.screens.RadioHomeScreen
 import net.tyflopodcast.tyflocentrum.ui.screens.SearchScreen
@@ -55,6 +56,7 @@ object AppRoutes {
     const val MAGAZINE = "magazine"
     const val MAGAZINE_ISSUE = "magazineIssue/{id}"
     const val COMMENTS = "comments/{postId}"
+    const val PODCAST_TEXT_VERSION = "podcastTextVersion/{postId}"
     const val PLAYER_MARKERS = "playerMarkers/{postId}/{title}/{subtitle}"
     const val PLAYER_LINKS = "playerLinks/{postId}/{title}/{subtitle}"
     const val PLAYER = "player/{url}/{title}/{subtitle}/{live}/{postId}/{seekMs}"
@@ -68,6 +70,7 @@ object AppRoutes {
     fun articleDetail(id: Int, origin: FavoriteArticleOrigin) = "articleDetail/$id/${origin.name.lowercase()}"
     fun magazineIssue(id: Int) = "magazineIssue/$id"
     fun comments(postId: Int) = "comments/$postId"
+    fun podcastTextVersion(postId: Int) = "podcastTextVersion/$postId"
     fun playerMarkers(postId: Int, title: String, subtitle: String?) = buildString {
         append("playerMarkers/")
         append(postId)
@@ -211,6 +214,15 @@ fun TyflocentrumApp(
                 arguments = listOf(navArgument("postId") { type = NavType.IntType })
             ) { entry ->
                 PodcastCommentsScreen(
+                    navController = navController,
+                    postId = entry.arguments?.getInt("postId") ?: return@composable
+                )
+            }
+            composable(
+                route = AppRoutes.PODCAST_TEXT_VERSION,
+                arguments = listOf(navArgument("postId") { type = NavType.IntType })
+            ) { entry ->
+                PodcastTextVersionScreen(
                     navController = navController,
                     postId = entry.arguments?.getInt("postId") ?: return@composable
                 )

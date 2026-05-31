@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 import net.tyflopodcast.tyflocentrum.core.model.AppSettings
+import net.tyflopodcast.tyflocentrum.core.model.CommentDraft
 import net.tyflopodcast.tyflocentrum.core.model.ContactDraft
 import net.tyflopodcast.tyflocentrum.core.model.ContentKindLabelPosition
 import net.tyflopodcast.tyflocentrum.core.model.FavoriteItem
@@ -65,6 +66,13 @@ class AppPreferencesRepository(
         )
     }
 
+    val commentDraftFlow: Flow<CommentDraft> = dataStore.data.map { prefs ->
+        CommentDraft(
+            authorName = prefs[COMMENT_AUTHOR_NAME] ?: prefs[CONTACT_NAME].orEmpty(),
+            authorEmail = prefs[COMMENT_AUTHOR_EMAIL].orEmpty()
+        )
+    }
+
     suspend fun setContentKindLabelPosition(position: ContentKindLabelPosition) {
         dataStore.edit { it[CONTENT_KIND_LABEL_POSITION] = position.name }
     }
@@ -93,6 +101,13 @@ class AppPreferencesRepository(
         dataStore.edit { prefs ->
             name?.let { prefs[CONTACT_NAME] = it }
             message?.let { prefs[CONTACT_MESSAGE] = it }
+        }
+    }
+
+    suspend fun updateCommentDraft(authorName: String? = null, authorEmail: String? = null) {
+        dataStore.edit { prefs ->
+            authorName?.let { prefs[COMMENT_AUTHOR_NAME] = it }
+            authorEmail?.let { prefs[COMMENT_AUTHOR_EMAIL] = it }
         }
     }
 
@@ -172,6 +187,8 @@ class AppPreferencesRepository(
         private val FAVORITES_JSON = stringPreferencesKey("favorites.json")
         private val CONTACT_NAME = stringPreferencesKey("contact.name")
         private val CONTACT_MESSAGE = stringPreferencesKey("contact.message")
+        private val COMMENT_AUTHOR_NAME = stringPreferencesKey("comment.authorName")
+        private val COMMENT_AUTHOR_EMAIL = stringPreferencesKey("comment.authorEmail")
         private val GLOBAL_PLAYBACK_RATE = floatPreferencesKey("playback.globalRate")
     }
 }

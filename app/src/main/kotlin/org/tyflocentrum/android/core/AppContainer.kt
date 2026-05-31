@@ -62,7 +62,8 @@ class AppContainer(
     val repository = TyfloRepository(
         podcastApi = podcastApi,
         articleApi = articleApi,
-        contactApi = contactApi
+        contactApi = contactApi,
+        httpClient = httpClient
     )
 
     val castDiagnostics = CastDiagnosticsLogger()

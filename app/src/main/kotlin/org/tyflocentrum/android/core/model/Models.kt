@@ -71,7 +71,8 @@ data class Comment(
     val parent: Int,
     val date: String = "",
     @SerialName("author_name") val authorName: String,
-    val content: CommentContent
+    val content: CommentContent,
+    val status: String? = null
 ) {
     @Transient
     private var formattedDateCache: String? = null
@@ -91,6 +92,16 @@ data class ThreadedComment(
     val comment: Comment,
     val depth: Int,
     val parentAuthorName: String? = null
+)
+
+data class CommentDraft(
+    val authorName: String = "",
+    val authorEmail: String = ""
+)
+
+data class CommentPublishResult(
+    val comment: Comment? = null,
+    val message: String
 )
 
 @Serializable
@@ -263,9 +274,19 @@ data class RelatedLink(
     val id: String = "$title-$url"
 }
 
+data class TextVersionReference(
+    val title: String,
+    val url: String,
+    val pageId: Int? = null,
+    val slug: String? = null
+) {
+    val id: String = pageId?.let { "page-$it" } ?: (slug?.let { "slug-$it" } ?: url)
+}
+
 data class ShowNotesData(
     val markers: List<ChapterMarker> = emptyList(),
-    val links: List<RelatedLink> = emptyList()
+    val links: List<RelatedLink> = emptyList(),
+    val textVersion: TextVersionReference? = null
 )
 
 data class PlayerRequest(

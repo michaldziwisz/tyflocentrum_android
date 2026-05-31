@@ -1,5 +1,6 @@
 package net.tyflopodcast.tyflocentrum.core.model
 
+import java.net.URI
 import java.util.Locale
 import java.util.regex.Pattern
 import kotlin.math.abs
@@ -211,6 +212,72 @@ object ShowNotesParser {
         } else {
             (parts[0] * 60 + parts[1]).toDouble()
         }
+    }
+}
+
+object TextVersionParser {
+    private val polishLocale = Locale("pl", "PL")
+
+    fun extractReference(html: String): TextVersionReference? {
+        val document = Jsoup.parseBodyFragment(html, "https://tyflopodcast.net/")
+        val candidates = document.select("a[href]").mapNotNull { link ->
+            val url = link.absUrl("href").ifBlank { link.attr("href") }.trim()
+            val uri = runCatching { URI(url) }.getOrNull() ?: return@mapNotNull null
+            if (!isTyflopodcastUrl(uri)) return@mapNotNull null
+
+            val linkText = link.text().trim()
+            val path = uri.path.orEmpty().lowercase(polishLocale)
+            val textLooksRelevant = normalize(linkText).let {
+                it.contains("tekstow") && (it.contains("wersj") || it.contains("odcink"))
+            }
+            val urlLooksRelevant = path.contains("/tekstowe-wersje-audycji/")
+            if (!urlLooksRelevant && !textLooksRelevant) return@mapNotNull null
+
+            TextVersionReference(
+                title = linkText.ifBlank { "Tekstowa wersja audycji" },
+                url = normalizeUrl(url),
+                pageId = pageIdFromQuery(uri),
+                slug = slugFromPath(uri)
+            )
+        }
+
+        return candidates.firstOrNull { it.url.contains("/tekstowe-wersje-audycji/", ignoreCase = true) }
+            ?: candidates.firstOrNull()
+    }
+
+    private fun isTyflopodcastUrl(uri: URI): Boolean {
+        val host = uri.host.orEmpty().lowercase(Locale.ROOT)
+        return host == "tyflopodcast.net" || host.endsWith(".tyflopodcast.net")
+    }
+
+    private fun pageIdFromQuery(uri: URI): Int? {
+        return uri.rawQuery
+            ?.split("&")
+            ?.firstNotNullOfOrNull { part ->
+                val key = part.substringBefore("=")
+                val value = part.substringAfter("=", missingDelimiterValue = "")
+                if (key == "page_id") value.toIntOrNull() else null
+            }
+    }
+
+    private fun slugFromPath(uri: URI): String? {
+        return uri.path
+            ?.trim('/')
+            ?.split('/')
+            ?.lastOrNull()
+            ?.takeIf { it.isNotBlank() && it != "tekstowe-wersje-audycji" }
+    }
+
+    private fun normalize(value: String): String {
+        return java.text.Normalizer.normalize(value, java.text.Normalizer.Form.NFD)
+            .replace("\\p{Mn}+".toRegex(), "")
+            .lowercase(polishLocale)
+    }
+
+    private fun normalizeUrl(value: String): String {
+        return value
+            .replace("http://", "https://")
+            .trimEnd('/')
     }
 }
 

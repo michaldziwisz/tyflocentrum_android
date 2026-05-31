@@ -248,6 +248,7 @@ fun PlayerScreen(
     var comments by remember(postId) { mutableStateOf(cachedComments) }
     var chapterMarkers by remember(postId) { mutableStateOf(cachedShowNotes?.markers.orEmpty()) }
     var relatedLinks by remember(postId) { mutableStateOf(cachedShowNotes?.links.orEmpty()) }
+    var textVersionReference by remember(postId) { mutableStateOf(cachedShowNotes?.textVersion) }
     var isShowNotesLoading by remember(postId, isLive) {
         mutableStateOf(postId != null && !isLive && cachedComments.isEmpty() && cachedShowNotes == null)
     }
@@ -276,6 +277,7 @@ fun PlayerScreen(
                 comments = loadedComments
                 chapterMarkers = showNotes.markers
                 relatedLinks = showNotes.links
+                textVersionReference = showNotes.textVersion
                 showNotesError = null
             }.onFailure {
                 showNotesError = "Nie udało się pobrać dodatków do audycji."
@@ -285,12 +287,17 @@ fun PlayerScreen(
             comments = emptyList()
             chapterMarkers = emptyList()
             relatedLinks = emptyList()
+            textVersionReference = null
             showNotesError = null
             isShowNotesLoading = false
         }
     }
 
-    val hasSupplementaryContent = chapterMarkers.isNotEmpty() || relatedLinks.isNotEmpty() || comments.isNotEmpty()
+    val hasSupplementaryContent = chapterMarkers.isNotEmpty() ||
+        relatedLinks.isNotEmpty() ||
+        comments.isNotEmpty() ||
+        textVersionReference != null ||
+        (postId != null && !isLive && !isShowNotesLoading)
 
     AppScreenScaffold(
         navController = navController,
@@ -442,13 +449,20 @@ fun PlayerScreen(
                                     }
                                 }
 
-                                if (comments.isNotEmpty()) {
+                                if (textVersionReference != null) {
                                     Button(
                                         modifier = Modifier.fillMaxWidth(),
-                                        onClick = { navController.navigate(AppRoutes.comments(postId)) }
+                                        onClick = { navController.navigate(AppRoutes.podcastTextVersion(postId)) }
                                     ) {
-                                        Text("Komentarze: ${comments.size}")
+                                        Text("Wersja tekstowa audycji")
                                     }
+                                }
+
+                                Button(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    onClick = { navController.navigate(AppRoutes.comments(postId)) }
+                                ) {
+                                    Text("Komentarze${comments.takeIf { it.isNotEmpty() }?.let { ": ${it.size}" } ?: ""}")
                                 }
                             }
                         }
@@ -679,13 +693,25 @@ private suspend fun loadShowNotesData(
 ): Pair<List<Comment>, ShowNotesData> {
     val comments = repository.fetchComments(postId)
     val cachedShowNotes = repository.peekShowNotes(postId)
+    val textVersion = cachedShowNotes?.textVersion ?: repository.fetchPodcastTextVersionReference(postId)
     val showNotes = cachedShowNotes ?: withContext(Dispatchers.Default) {
         val (markers, links) = ShowNotesParser.parse(comments)
-        ShowNotesData(markers = markers, links = links)
+        ShowNotesData(
+            markers = markers,
+            links = links,
+            textVersion = textVersion
+        )
     }.also {
         repository.storeShowNotes(postId, it)
     }
-    return comments to showNotes
+    val finalShowNotes = if (showNotes.textVersion == textVersion) {
+        showNotes
+    } else {
+        showNotes.copy(textVersion = textVersion).also {
+            repository.storeShowNotes(postId, it)
+        }
+    }
+    return comments to finalShowNotes
 }
 
 private fun linkHostLabel(value: String): String? {
