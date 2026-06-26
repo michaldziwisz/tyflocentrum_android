@@ -1,0 +1,6 @@
+Ta wersja skupia się na dostępności dla czytników ekranu.
+
+• Pola i przyciski w całej aplikacji są teraz poprawnie odczytywane przez czytniki ekranu — zarówno TalkBack, jak i Jeshuo. Wcześniej część etykiet (np. pól kontaktu, głosówki, komentarzy) była pomijana przez Jeshuo.
+• Tyfloradio na żywo: czytnik nie odczytuje już w kółko elementu pod palcem podczas słuchania.
+
+Dziękujemy za zgłoszenia. Piszcie, jeśli coś jeszcze nie jest dostępne.
