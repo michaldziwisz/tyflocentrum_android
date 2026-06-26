@@ -107,8 +107,9 @@ Zielony znaczek = wszystko gotowe.
    git tag v1.0.7
    git push origin v1.0.7
    ```
-   Push taga `v*` automatycznie uruchamia workflow, który publikuje na ścieżkę
-   „internal".
+   Push taga `v*` automatycznie uruchamia workflow, który publikuje na
+   PRODUKCJĘ (rollout 100%). Jeśli chcesz najpierw na ścieżkę testową, użyj
+   ręcznego uruchomienia (Wariant 3) z wybranym trackiem.
 
 ### Wariant 3: ręczne wydanie na wybraną ścieżkę
 

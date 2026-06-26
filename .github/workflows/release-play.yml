@@ -99,8 +99,8 @@ jobs:
       - name: Publish to Google Play
         env:
           SUPPLY_JSON_KEY: play-service-account.json
-          # tag push -> sciezka internal, completed; reczne -> wg inputow
-          PLAY_TRACK: ${{ github.event_name == 'workflow_dispatch' && inputs.track || 'internal' }}
+          # tag push -> od razu PRODUKCJA (completed); reczne -> wg inputow
+          PLAY_TRACK: ${{ github.event_name == 'workflow_dispatch' && inputs.track || 'production' }}
           VALIDATE_ONLY: ${{ github.event_name == 'workflow_dispatch' && inputs.validate_only || 'false' }}
         run: |
           if [ "$VALIDATE_ONLY" = "true" ]; then
