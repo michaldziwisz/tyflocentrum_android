@@ -55,6 +55,11 @@ Uwaga:
 - workflow wydawniczy publikuje instalowalny `debug APK`,
 - produkcyjne wydanie podpisane do dystrybucji w Google Play wymaga osobnej konfiguracji kluczy i podpisywania.
 
+## Dla deweloperów
+
+Opis architektury kodu (warstwy, przepływ danych, odtwarzacz i Cast, dostępność)
+znajduje się w `docs/architektura.md`.
+
 ## Google Play
 
 Repo zawiera też pakiet dokumentacji do pierwszej publikacji w Google Play:
