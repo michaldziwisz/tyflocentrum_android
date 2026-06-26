@@ -14,3 +14,15 @@ keys/
 
 # Log diagnostyczny Cast (generowany na urzadzeniu, tylko DEBUG)
 grzegorz_log.txt
+
+# Fastlane / Google Play publishing
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots
+fastlane/test_output
+fastlane/README.md
+vendor/bundle/
+.bundle/
+# Klucz service accountu Google Play - NIGDY do repo (w CI przez sekret)
+play-service-account*.json
+*-play-sa.json

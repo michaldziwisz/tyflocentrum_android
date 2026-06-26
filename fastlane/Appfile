@@ -1,0 +1,6 @@
+# Appfile dla fastlane supply (publikacja do Google Play).
+# package_name musi byc zgodny z applicationId aplikacji.
+# Klucz service accountu NIE jest tu trzymany - w CI podajemy sciezke do pliku
+# przez zmienna srodowiskowa SUPPLY_JSON_KEY (plik odtwarzany z sekretu GitHub),
+# zeby nic wrazliwego nie trafilo do repo.
+package_name("net.tyflopodcast.tyflocentrum")

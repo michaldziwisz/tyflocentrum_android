@@ -1,0 +1,68 @@
+# Fastfile - definicje lanes (zadan) fastlane dla Tyflocentrum.
+#
+# Publikacja do Google Play przez Play Developer Publishing API.
+# Wszystkie sekrety (klucz service accountu, dane keystore) przychodza z
+# zmiennych srodowiskowych ustawianych w CI z GitHub Secrets - NIE z repo.
+#
+# Uzycie lokalne (opcjonalne):
+#   SUPPLY_JSON_KEY=sa.json bundle exec fastlane deploy_internal
+# W CI: wywolywane przez .github/workflows/release-play.yml
+
+default_platform(:android)
+
+# Domyslna sciezka publikacji. 'internal' = testy wewnetrzne (najbezpieczniej).
+# Mozliwe: 'internal', 'alpha' (closed), 'beta' (open), 'production'.
+DEFAULT_TRACK = "internal"
+
+platform :android do
+  desc "Zbuduj podpisany AAB i wyslij na wskazana sciezke Google Play"
+  lane :deploy do |options|
+    track = options[:track] || DEFAULT_TRACK
+
+    # Build podpisanego bundla. Sygnatura bierze sie z keystore.properties,
+    # ktore w CI odtwarzamy z sekretow PRZED wywolaniem fastlane.
+    gradle(
+      task: "bundle",
+      build_type: "Release",
+      flags: "--no-daemon"
+    )
+
+    # versionCode wyznacza nazwe pliku changelogu:
+    # fastlane/metadata/android/<locale>/changelogs/<versionCode>.txt
+    upload_to_play_store(
+      track: track,
+      aab: "app/build/outputs/bundle/release/app-release.aab",
+      # metadane (changelogi/listing) bierzemy z fastlane/metadata.
+      # Na start wgrywamy TYLKO changelogi, zeby nie nadpisac listingu w Console,
+      # ktory uzupelniasz recznie. Zmien na false, gdy zechcesz zarzadzac
+      # calym listingiem z repo.
+      skip_upload_metadata: false,
+      skip_upload_images: true,
+      skip_upload_screenshots: true,
+      skip_upload_apk: true,
+      release_status: options[:release_status] || "completed"
+    )
+  end
+
+  desc "Skrot: wydanie na sciezke testow wewnetrznych"
+  lane :deploy_internal do
+    deploy(track: "internal")
+  end
+
+  desc "Walidacja: buduje AAB i sprawdza polaczenie z Play API bez publikacji"
+  lane :validate do
+    gradle(
+      task: "bundle",
+      build_type: "Release",
+      flags: "--no-daemon"
+    )
+    upload_to_play_store(
+      track: "internal",
+      aab: "app/build/outputs/bundle/release/app-release.aab",
+      validate_only: true,
+      skip_upload_images: true,
+      skip_upload_screenshots: true,
+      skip_upload_apk: true
+    )
+  end
+end

@@ -1,0 +1,115 @@
+name: Release to Google Play
+
+# Publikacja podpisanego AAB do Google Play przez fastlane supply.
+#
+# Wyzwalanie:
+#  - recznie (workflow_dispatch) z wyborem sciezki i trybu walidacji,
+#  - automatycznie po wypchnieciu taga w formacie v* (np. v1.0.6).
+#
+# WYMAGANE SEKRETY (Settings > Secrets and variables > Actions):
+#  PLAY_SERVICE_ACCOUNT_JSON  - cala zawartosc pliku JSON klucza service accountu
+#  ANDROID_KEYSTORE_BASE64    - keys/tyflocentrum-upload.jks zakodowany base64
+#  KEYSTORE_STORE_PASSWORD    - haslo do keystore
+#  KEYSTORE_KEY_ALIAS         - alias klucza (upload)
+#  KEYSTORE_KEY_PASSWORD      - haslo klucza
+
+on:
+  workflow_dispatch:
+    inputs:
+      track:
+        description: "Sciezka Google Play"
+        required: true
+        default: internal
+        type: choice
+        options:
+          - internal
+          - alpha
+          - beta
+          - production
+      validate_only:
+        description: "Tylko walidacja (nic nie publikuje)"
+        required: true
+        default: true
+        type: boolean
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK packages
+        run: sdkmanager "platforms;android-36" "build-tools;36.0.0" "platform-tools"
+
+      - name: Set up Ruby and fastlane
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.3"
+          bundler-cache: true
+
+      - name: Make Gradle wrapper executable
+        run: chmod +x gradlew
+
+      - name: Restore upload keystore
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          mkdir -p keys
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > keys/tyflocentrum-upload.jks
+
+      - name: Write keystore.properties
+        env:
+          STORE_PASSWORD: ${{ secrets.KEYSTORE_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEYSTORE_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEYSTORE_KEY_PASSWORD }}
+        run: |
+          {
+            echo "storeFile=keys/tyflocentrum-upload.jks"
+            echo "storePassword=${STORE_PASSWORD}"
+            echo "keyAlias=${KEY_ALIAS}"
+            echo "keyPassword=${KEY_PASSWORD}"
+          } > keystore.properties
+
+      - name: Write Play service account key
+        env:
+          PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+        run: |
+          printf '%s' "$PLAY_SERVICE_ACCOUNT_JSON" > play-service-account.json
+
+      - name: Publish to Google Play
+        env:
+          SUPPLY_JSON_KEY: play-service-account.json
+          # tag push -> sciezka internal, completed; reczne -> wg inputow
+          PLAY_TRACK: ${{ github.event_name == 'workflow_dispatch' && inputs.track || 'internal' }}
+          VALIDATE_ONLY: ${{ github.event_name == 'workflow_dispatch' && inputs.validate_only || 'false' }}
+        run: |
+          if [ "$VALIDATE_ONLY" = "true" ]; then
+            bundle exec fastlane validate
+          else
+            bundle exec fastlane deploy track:"$PLAY_TRACK"
+          fi
+
+      - name: Clean up secrets from runner
+        if: always()
+        run: |
+          rm -f play-service-account.json keystore.properties keys/tyflocentrum-upload.jks
