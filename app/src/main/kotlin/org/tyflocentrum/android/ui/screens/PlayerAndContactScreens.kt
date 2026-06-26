@@ -50,7 +50,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
+
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -78,6 +78,8 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
@@ -114,8 +116,10 @@ import net.tyflopodcast.tyflocentrum.ui.common.AppScreenScaffold
 import net.tyflopodcast.tyflocentrum.ui.common.CastRouteButton
 import net.tyflopodcast.tyflocentrum.ui.common.ContentListItem
 import net.tyflopodcast.tyflocentrum.ui.common.FullScreenScrollable
+import net.tyflopodcast.tyflocentrum.ui.common.LabeledTextField
 import net.tyflopodcast.tyflocentrum.ui.common.LinkifiedPlainText
 import net.tyflopodcast.tyflocentrum.ui.common.StatePane
+import net.tyflopodcast.tyflocentrum.ui.common.semanticButton
 import java.util.Locale
 
 private const val RADIO_STREAM_URL = "https://radio.tyflopodcast.net/hls/stream.m3u8"
@@ -164,7 +168,9 @@ fun RadioHomeScreen(
         ) {
             item {
                 Button(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .semanticButton("Posłuchaj Tyfloradia"),
                     onClick = {
                         navController.navigate(
                             AppRoutes.player(
@@ -182,14 +188,21 @@ fun RadioHomeScreen(
                 }
             }
             item {
-                Button(modifier = Modifier.fillMaxWidth(), onClick = { loadSchedule() }) {
+                Button(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .semanticButton("Sprawdź ramówkę"),
+                    onClick = { loadSchedule() }
+                ) {
                     Icon(Icons.Filled.Schedule, contentDescription = null)
                     Text("Sprawdź ramówkę", modifier = Modifier.padding(start = 8.dp))
                 }
             }
             item {
                 Button(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .semanticButton("Skontaktuj się z Tyfloradiem"),
                     onClick = {
                         scope.launch {
                             val available = runCatching { appContainer.repository.getTpAvailability() }.getOrNull()?.available == true
@@ -340,21 +353,29 @@ fun PlayerScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             if (!isLive) {
-                                IconButton(onClick = { appContainer.playerController.skipBackward() }) {
+                                IconButton(
+                                    onClick = { appContainer.playerController.skipBackward() },
+                                    modifier = Modifier.semanticButton("Cofnij 30 sekund")
+                                ) {
                                     Icon(Icons.Filled.VolumeDown, contentDescription = "Cofnij 30 sekund")
                                 }
                             }
+                            val playPauseLabel = if (playerState.playWhenReady) "Pauza" else "Odtwarzaj"
                             IconButton(
-                                onClick = { appContainer.playerController.togglePlayPause(request) }
+                                onClick = { appContainer.playerController.togglePlayPause(request) },
+                                modifier = Modifier.semanticButton(playPauseLabel)
                             ) {
                                 Icon(
                                     imageVector = if (playerState.playWhenReady) Icons.Filled.PauseCircle else Icons.Filled.PlayCircle,
-                                    contentDescription = if (playerState.playWhenReady) "Pauza" else "Odtwarzaj",
+                                    contentDescription = playPauseLabel,
                                     tint = MaterialTheme.colorScheme.primary
                                 )
                             }
                             if (!isLive) {
-                                IconButton(onClick = { appContainer.playerController.skipForward() }) {
+                                IconButton(
+                                    onClick = { appContainer.playerController.skipForward() },
+                                    modifier = Modifier.semanticButton("Przewiń do przodu 30 sekund")
+                                ) {
                                     Icon(Icons.Filled.VolumeUp, contentDescription = "Przewiń do przodu 30 sekund")
                                 }
                             }
@@ -392,7 +413,9 @@ fun PlayerScreen(
                             )
                         } else {
                             Button(
-                                modifier = Modifier.fillMaxWidth(),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .semanticButton("Skontaktuj się z Tyfloradiem"),
                                 onClick = {
                                     scope.launch {
                                         val available = runCatching { appContainer.repository.getTpAvailability() }.getOrNull()?.available == true
@@ -433,7 +456,9 @@ fun PlayerScreen(
 
                                 if (chapterMarkers.isNotEmpty()) {
                                     Button(
-                                        modifier = Modifier.fillMaxWidth(),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .semanticButton("Znaczniki czasu: ${chapterMarkers.size}"),
                                         onClick = { navController.navigate(AppRoutes.playerMarkers(postId, title, subtitle)) }
                                     ) {
                                         Text("Znaczniki czasu: ${chapterMarkers.size}")
@@ -442,7 +467,9 @@ fun PlayerScreen(
 
                                 if (relatedLinks.isNotEmpty()) {
                                     Button(
-                                        modifier = Modifier.fillMaxWidth(),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .semanticButton("Odnośniki: ${relatedLinks.size}"),
                                         onClick = { navController.navigate(AppRoutes.playerLinks(postId, title, subtitle)) }
                                     ) {
                                         Text("Odnośniki: ${relatedLinks.size}")
@@ -451,18 +478,23 @@ fun PlayerScreen(
 
                                 if (textVersionReference != null) {
                                     Button(
-                                        modifier = Modifier.fillMaxWidth(),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .semanticButton("Wersja tekstowa audycji"),
                                         onClick = { navController.navigate(AppRoutes.podcastTextVersion(postId)) }
                                     ) {
                                         Text("Wersja tekstowa audycji")
                                     }
                                 }
 
+                                val commentsLabel = "Komentarze${comments.takeIf { it.isNotEmpty() }?.let { ": ${it.size}" } ?: ""}"
                                 Button(
-                                    modifier = Modifier.fillMaxWidth(),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .semanticButton(commentsLabel),
                                     onClick = { navController.navigate(AppRoutes.comments(postId)) }
                                 ) {
-                                    Text("Komentarze${comments.takeIf { it.isNotEmpty() }?.let { ": ${it.size}" } ?: ""}")
+                                    Text(commentsLabel)
                                 }
                             }
                         }
@@ -645,20 +677,26 @@ private fun PlaybackRateControls(
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Button(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .semanticButton("Wolniej"),
                     onClick = onPrevious
                 ) {
                     Icon(Icons.Filled.Speed, contentDescription = null)
                     Text("Wolniej", modifier = Modifier.padding(start = 8.dp))
                 }
                 Button(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .semanticButton("Prędkość ${PlaybackRatePolicy.format(playbackRate)}x"),
                     onClick = onCycle
                 ) {
                     Text("Prędkość ${PlaybackRatePolicy.format(playbackRate)}x")
                 }
                 Button(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .semanticButton("Szybciej"),
                     onClick = onNext
                 ) {
                     Icon(Icons.Filled.Speed, contentDescription = null)
@@ -671,14 +709,23 @@ private fun PlaybackRateControls(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Button(onClick = onPrevious) {
+                Button(
+                    onClick = onPrevious,
+                    modifier = Modifier.semanticButton("Wolniej")
+                ) {
                     Icon(Icons.Filled.Speed, contentDescription = null)
                     Text("Wolniej", modifier = Modifier.padding(start = 8.dp))
                 }
-                Button(onClick = onCycle) {
+                Button(
+                    onClick = onCycle,
+                    modifier = Modifier.semanticButton("Prędkość ${PlaybackRatePolicy.format(playbackRate)}x")
+                ) {
                     Text("Prędkość ${PlaybackRatePolicy.format(playbackRate)}x")
                 }
-                Button(onClick = onNext) {
+                Button(
+                    onClick = onNext,
+                    modifier = Modifier.semanticButton("Szybciej")
+                ) {
                     Icon(Icons.Filled.Speed, contentDescription = null)
                     Text("Szybciej", modifier = Modifier.padding(start = 8.dp))
                 }
@@ -839,10 +886,20 @@ fun ContactMenuScreen(
                 .padding(detailPadding(padding)),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Button(modifier = Modifier.fillMaxWidth(), onClick = { navController.navigate(AppRoutes.CONTACT_TEXT) }) {
+            Button(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .semanticButton("Napisz wiadomość tekstową"),
+                onClick = { navController.navigate(AppRoutes.CONTACT_TEXT) }
+            ) {
                 Text("Napisz wiadomość tekstową")
             }
-            Button(modifier = Modifier.fillMaxWidth(), onClick = { navController.navigate(AppRoutes.CONTACT_VOICE) }) {
+            Button(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .semanticButton("Nagraj wiadomość głosową"),
+                onClick = { navController.navigate(AppRoutes.CONTACT_VOICE) }
+            ) {
                 Text("Nagraj wiadomość głosową")
             }
         }
@@ -893,7 +950,7 @@ fun ContactTextMessageScreen(
     ) { padding ->
         FullScreenScrollable(modifier = Modifier.padding(detailPadding(padding))) {
             error?.let { StatePane(message = it) }
-            OutlinedTextField(
+            LabeledTextField(
                 value = name,
                 onValueChange = {
                     didEditName = true
@@ -902,17 +959,13 @@ fun ContactTextMessageScreen(
                     error = null
                     scope.launch { appContainer.preferencesRepository.updateContactDraft(name = it) }
                 },
-                label = { Text("Nick lub imię") },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .focusRequester(nameFocusRequester),
+                label = "Nick lub imię",
+                fieldModifier = Modifier.focusRequester(nameFocusRequester),
                 singleLine = true,
                 isError = nameError != null,
-                supportingText = {
-                    nameError?.let { Text(it) }
-                }
+                errorText = nameError
             )
-            OutlinedTextField(
+            LabeledTextField(
                 value = message,
                 onValueChange = {
                     didEditMessage = true
@@ -921,19 +974,19 @@ fun ContactTextMessageScreen(
                     error = null
                     scope.launch { appContainer.preferencesRepository.updateContactDraft(message = it) }
                 },
-                label = { Text("Wiadomość") },
-                modifier = Modifier
-                    .fillMaxWidth()
+                label = "Wiadomość",
+                fieldModifier = Modifier
                     .height(200.dp)
                     .focusRequester(messageFocusRequester),
                 isError = messageError != null,
-                supportingText = {
-                    messageError?.let { Text(it) }
-                }
+                errorText = messageError
             )
 
+            val sendMessageLabel = if (isSending) "Wysyłanie…" else "Wyślij wiadomość"
             Button(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .semanticButton(sendMessageLabel),
                 onClick = {
                     val trimmedName = name.trim()
                     val trimmedMessage = message.trim()
@@ -1159,7 +1212,7 @@ fun ContactVoiceMessageScreen(
     ) { padding ->
         FullScreenScrollable(modifier = Modifier.padding(detailPadding(padding))) {
             formMessage?.let { StatePane(message = it) }
-            OutlinedTextField(
+            LabeledTextField(
                 value = name,
                 onValueChange = {
                     didEditName = true
@@ -1168,15 +1221,11 @@ fun ContactVoiceMessageScreen(
                     formMessage = null
                     scope.launch { appContainer.preferencesRepository.updateContactDraft(name = it) }
                 },
-                label = { Text("Nick lub imię") },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .focusRequester(nameFocusRequester),
+                label = "Nick lub imię",
+                fieldModifier = Modifier.focusRequester(nameFocusRequester),
                 singleLine = true,
                 isError = nameError != null,
-                supportingText = {
-                    nameError?.let { Text(it) }
-                }
+                errorText = nameError
             )
 
             Text(
@@ -1185,8 +1234,18 @@ fun ContactVoiceMessageScreen(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
+            val recordButtonLabel = when {
+                recorderState.state == RecorderState.RECORDING -> "Zatrzymaj nagrywanie"
+                recorderState.recordedDurationMs > 0 -> "Dograj kolejny fragment"
+                else -> "Rozpocznij nagrywanie"
+            }
             Button(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clearAndSetSemantics {
+                        contentDescription = recordButtonLabel
+                        role = Role.Button
+                    },
                 onClick = {
                     formMessage = null
                     if (recorderState.state == RecorderState.RECORDING) {
@@ -1204,11 +1263,7 @@ fun ContactVoiceMessageScreen(
                     contentDescription = null
                 )
                 Text(
-                    text = when {
-                        recorderState.state == RecorderState.RECORDING -> "Zatrzymaj nagrywanie"
-                        recorderState.recordedDurationMs > 0 -> "Dograj kolejny fragment"
-                        else -> "Rozpocznij nagrywanie"
-                    },
+                    text = recordButtonLabel,
                     modifier = Modifier.padding(start = 8.dp)
                 )
             }
@@ -1299,23 +1354,35 @@ fun ContactVoiceMessageScreen(
             }
 
             if (recorderState.recordedDurationMs > 0) {
-                Button(modifier = Modifier.fillMaxWidth(), onClick = { recorder.togglePreview() }, enabled = !isSending) {
+                val previewLabel = if (recorderState.state == RecorderState.PLAYING_PREVIEW) "Zatrzymaj odsłuch" else "Odsłuchaj"
+                Button(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .semanticButton(previewLabel),
+                    onClick = { recorder.togglePreview() },
+                    enabled = !isSending
+                ) {
                     Icon(Icons.Filled.GraphicEq, contentDescription = null)
                     Text(
-                        text = if (recorderState.state == RecorderState.PLAYING_PREVIEW) "Zatrzymaj odsłuch" else "Odsłuchaj",
+                        text = previewLabel,
                         modifier = Modifier.padding(start = 8.dp)
                     )
                 }
                 Button(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .semanticButton("Usuń nagranie"),
                     onClick = { recorder.reset() },
                     enabled = !isSending
                 ) {
                     Icon(Icons.Filled.Delete, contentDescription = null)
                     Text("Usuń nagranie", modifier = Modifier.padding(start = 8.dp))
                 }
+                val sendLabel = if (isSending) "Wysyłanie…" else "Wyślij głosówkę"
                 Button(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .semanticButton(sendLabel),
                     onClick = {
                         val trimmedName = name.trim()
                         if (trimmedName.isBlank()) {
@@ -1341,7 +1408,7 @@ fun ContactVoiceMessageScreen(
                     enabled = recorderState.canSend && !recorderState.isProcessing && !isSending
                 ) {
                     Icon(Icons.Filled.Send, contentDescription = null)
-                    Text(if (isSending) "Wysyłanie…" else "Wyślij głosówkę", modifier = Modifier.padding(start = 8.dp))
+                    Text(sendLabel, modifier = Modifier.padding(start = 8.dp))
                 }
             }
         }

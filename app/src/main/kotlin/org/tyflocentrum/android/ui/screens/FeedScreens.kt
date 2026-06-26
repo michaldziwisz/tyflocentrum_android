@@ -19,7 +19,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
+
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -55,7 +55,9 @@ import net.tyflopodcast.tyflocentrum.ui.LocalAppContainer
 import net.tyflopodcast.tyflocentrum.ui.common.Announcement
 import net.tyflopodcast.tyflocentrum.ui.common.AppScreenScaffold
 import net.tyflopodcast.tyflocentrum.ui.common.ContentListItem
+import net.tyflopodcast.tyflocentrum.ui.common.semanticButton
 import net.tyflopodcast.tyflocentrum.ui.common.FilterChipRow
+import net.tyflopodcast.tyflocentrum.ui.common.LabeledTextField
 import net.tyflopodcast.tyflocentrum.ui.common.RootDestination
 import net.tyflopodcast.tyflocentrum.ui.common.StatePane
 
@@ -259,7 +261,9 @@ fun NewsScreen(
             if (items.isNotEmpty() && canLoadMore()) {
                 item {
                     Button(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .semanticButton(if (isLoadingMore) "Ładowanie…" else "Wczytaj starsze treści"),
                         onClick = { load(reset = false) },
                         enabled = !isLoadingMore
                     ) {
@@ -377,7 +381,9 @@ fun ArticlesHomeScreen(
             if (categories.isNotEmpty() && (totalPages == null || page <= (totalPages ?: 0))) {
                 item {
                     Button(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .semanticButton(if (isLoading) "Ładowanie…" else "Wczytaj kolejne kategorie"),
                         onClick = { load(reset = false) },
                         enabled = !isLoading
                     ) {
@@ -471,7 +477,9 @@ private fun CategoriesHomeScreen(
             if (categories.isNotEmpty() && (totalPages == null || page <= (totalPages ?: 0))) {
                 item {
                     Button(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .semanticButton(if (isLoading) "Ładowanie…" else "Wczytaj kolejne kategorie"),
                         onClick = { load(reset = false) },
                         enabled = !isLoading
                     ) {
@@ -596,7 +604,7 @@ fun PodcastListScreen(
             }
             if (items.isNotEmpty() && (totalPages == null || page <= (totalPages ?: 0))) {
                 item {
-                    Button(modifier = Modifier.fillMaxWidth(), onClick = { load(reset = false) }, enabled = !isLoading) {
+                    Button(modifier = Modifier.fillMaxWidth().semanticButton(if (isLoading) "Ładowanie…" else "Wczytaj starsze treści"), onClick = { load(reset = false) }, enabled = !isLoading) {
                         Text(if (isLoading) "Ładowanie…" else "Wczytaj starsze treści")
                     }
                 }
@@ -708,7 +716,7 @@ fun ArticleListScreen(
             }
             if (items.isNotEmpty() && (totalPages == null || page <= (totalPages ?: 0))) {
                 item {
-                    Button(modifier = Modifier.fillMaxWidth(), onClick = { load(reset = false) }, enabled = !isLoading) {
+                    Button(modifier = Modifier.fillMaxWidth().semanticButton(if (isLoading) "Ładowanie…" else "Wczytaj starsze treści"), onClick = { load(reset = false) }, enabled = !isLoading) {
                         Text(if (isLoading) "Ładowanie…" else "Wczytaj starsze treści")
                     }
                 }
@@ -801,15 +809,16 @@ fun SearchScreen(
                             selectedIndex = selectedScope,
                             onSelected = { selectedScope = it }
                         )
-                        OutlinedTextField(
+                        LabeledTextField(
                             value = query,
                             onValueChange = { query = it },
-                            label = { Text("Podaj frazę do wyszukania") },
-                            modifier = Modifier.fillMaxWidth(),
+                            label = "Podaj frazę do wyszukania",
                             singleLine = true
                         )
                         Button(
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .semanticButton(if (isLoading) "Wyszukiwanie…" else "Szukaj"),
                             onClick = { search() },
                             enabled = query.trim().isNotBlank() && !isLoading
                         ) {
@@ -984,7 +993,8 @@ private fun ActionCard(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 2.dp),
+            .padding(vertical = 2.dp)
+            .semanticButton("$title, $supportingText"),
         onClick = onClick,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {

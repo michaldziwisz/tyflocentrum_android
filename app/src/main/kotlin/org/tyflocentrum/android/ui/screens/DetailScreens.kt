@@ -27,7 +27,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
+
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -46,7 +46,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.foundation.text.KeyboardOptions
+
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat.startActivity
 import androidx.core.net.toUri
@@ -73,8 +73,10 @@ import net.tyflopodcast.tyflocentrum.ui.common.AppScreenScaffold
 import net.tyflopodcast.tyflocentrum.ui.common.ContentListItem
 import net.tyflopodcast.tyflocentrum.ui.common.FilterChipRow
 import net.tyflopodcast.tyflocentrum.ui.common.FullScreenScrollable
+import net.tyflopodcast.tyflocentrum.ui.common.LabeledTextField
 import net.tyflopodcast.tyflocentrum.ui.common.OpenExternalButton
 import net.tyflopodcast.tyflocentrum.ui.common.StatePane
+import net.tyflopodcast.tyflocentrum.ui.common.semanticButton
 import net.tyflopodcast.tyflocentrum.ui.common.ToggleRow
 
 private const val APP_SUPPORT_URL = "https://michaldziwisz.github.io/tyflocentrum_android/"
@@ -145,7 +147,8 @@ fun PodcastDetailScreen(
                         scope.launch {
                             appContainer.preferencesRepository.toggleFavorite(favoriteItem)
                         }
-                    }
+                    },
+                    modifier = Modifier.semanticButton(if (isFavorite) "Usuń z ulubionych" else "Dodaj do ulubionych")
                 ) {
                     Icon(
                         imageVector = Icons.Filled.Star,
@@ -165,7 +168,9 @@ fun PodcastDetailScreen(
                 Text(text = podcast.formattedDate, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
                 Button(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .semanticButton("Słuchaj audycji"),
                     onClick = {
                         navController.navigate(
                             AppRoutes.player(
@@ -197,16 +202,21 @@ fun PodcastDetailScreen(
                     )
                 }
 
+                val podcastCommentsLabel = "Komentarze${commentsCount?.let { ": $it" } ?: ""}"
                 Button(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .semanticButton(podcastCommentsLabel),
                     onClick = { navController.navigate(AppRoutes.comments(podcast.id)) }
                 ) {
-                    Text("Komentarze${commentsCount?.let { ": $it" } ?: ""}")
+                    Text(podcastCommentsLabel)
                 }
 
                 if (textVersionReference != null) {
                     Button(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .semanticButton("Wersja tekstowa audycji"),
                         onClick = { navController.navigate(AppRoutes.podcastTextVersion(podcast.id)) }
                     ) {
                         Text("Wersja tekstowa audycji")
@@ -331,7 +341,8 @@ fun ArticleDetailScreen(
                         scope.launch {
                             appContainer.preferencesRepository.toggleFavorite(favoriteItem)
                         }
-                    }
+                    },
+                    modifier = Modifier.semanticButton(if (isFavorite) "Usuń z ulubionych" else "Dodaj do ulubionych")
                 ) {
                     Icon(
                         imageVector = Icons.Filled.Star,
@@ -544,7 +555,9 @@ fun PodcastCommentsScreen(
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         formMessage?.let { StatePane(message = it) }
                         Button(
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .semanticButton("Dodaj komentarz"),
                             onClick = {
                                 formMessage = null
                                 authorNameError = null
@@ -637,63 +650,58 @@ private fun CommentFormCard(
                             style = MaterialTheme.typography.bodyLarge,
                             fontWeight = FontWeight.SemiBold
                         )
-                        TextButton(onClick = onCancelReply) {
+                        TextButton(
+                            onClick = onCancelReply,
+                            modifier = Modifier.semanticButton("Anuluj odpowiedź")
+                        ) {
                             Text("Anuluj odpowiedź")
                         }
                     }
                 }
             }
             formMessage?.let { StatePane(message = it) }
-            OutlinedTextField(
+            LabeledTextField(
                 value = authorName,
                 onValueChange = onAuthorNameChange,
-                label = { Text("Imię lub nick") },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .focusRequester(authorNameFocusRequester),
+                label = "Imię lub nick",
+                fieldModifier = Modifier.focusRequester(authorNameFocusRequester),
                 singleLine = true,
                 isError = authorNameError != null,
-                supportingText = {
-                    authorNameError?.let { Text(it) }
-                }
+                errorText = authorNameError
             )
-            OutlinedTextField(
+            LabeledTextField(
                 value = authorEmail,
                 onValueChange = onAuthorEmailChange,
-                label = { Text("E-mail") },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .focusRequester(authorEmailFocusRequester),
+                label = "E-mail",
+                fieldModifier = Modifier.focusRequester(authorEmailFocusRequester),
                 singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                keyboardType = KeyboardType.Email,
                 isError = authorEmailError != null,
-                supportingText = {
-                    authorEmailError?.let { Text(it) }
-                }
+                errorText = authorEmailError
             )
-            OutlinedTextField(
+            LabeledTextField(
                 value = content,
                 onValueChange = onContentChange,
-                label = { Text("Komentarz") },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .focusRequester(contentFocusRequester),
+                label = "Komentarz",
+                fieldModifier = Modifier.focusRequester(contentFocusRequester),
                 minLines = 4,
                 isError = contentError != null,
-                supportingText = {
-                    contentError?.let { Text(it) }
-                }
+                errorText = contentError
             )
+            val submitCommentLabel = if (isSending) "Wysyłanie…" else "Wyślij komentarz"
             Button(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .semanticButton(submitCommentLabel),
                 onClick = onSubmit,
                 enabled = !isSending
             ) {
-                Text(if (isSending) "Wysyłanie…" else "Wyślij komentarz")
+                Text(submitCommentLabel)
             }
             TextButton(
                 onClick = onCancelForm,
-                enabled = !isSending
+                enabled = !isSending,
+                modifier = Modifier.semanticButton("Anuluj")
             ) {
                 Text("Anuluj")
             }
@@ -737,7 +745,10 @@ private fun CommentCard(
                 )
             }
             AccessibleHtmlText(html = comment.content.rendered)
-            TextButton(onClick = { onReply(comment) }) {
+            TextButton(
+                onClick = { onReply(comment) },
+                modifier = Modifier.semanticButton("Odpowiedz")
+            ) {
                 Text("Odpowiedz")
             }
         }
@@ -962,19 +973,25 @@ fun SettingsScreen(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Button(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .semanticButton("Otwórz politykę prywatności"),
                 onClick = { openUri(context, APP_PRIVACY_POLICY_URL) }
             ) {
                 Text("Otwórz politykę prywatności")
             }
             Button(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .semanticButton("Otwórz stronę wsparcia"),
                 onClick = { openUri(context, APP_SUPPORT_URL) }
             ) {
                 Text("Otwórz stronę wsparcia")
             }
             Button(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .semanticButton("Napisz wiadomość e-mail"),
                 onClick = { openUri(context, APP_SUPPORT_EMAIL) }
             ) {
                 Text("Napisz wiadomość e-mail")
@@ -988,7 +1005,9 @@ fun SettingsScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Button(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .semanticButton("Udostępnij log Cast"),
                     onClick = {
                         shareText(
                             context = context,
@@ -1000,7 +1019,9 @@ fun SettingsScreen(
                     Text("Udostępnij log Cast")
                 }
                 Button(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .semanticButton("Wyczyść log Cast"),
                     onClick = { appContainer.castDiagnostics.clear() }
                 ) {
                     Text("Wyczyść log Cast")
@@ -1031,7 +1052,10 @@ private fun ActionButton(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     onClick: () -> Unit
 ) {
-    Button(onClick = onClick) {
+    Button(
+        onClick = onClick,
+        modifier = Modifier.semanticButton(label)
+    ) {
         Icon(imageVector = icon, contentDescription = null)
         Text(text = label, modifier = Modifier.padding(start = 8.dp))
     }

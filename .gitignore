@@ -11,3 +11,6 @@ app/build/
 *.keystore
 keystore.properties
 keys/
+
+# Log diagnostyczny Cast (generowany na urzadzeniu, tylko DEBUG)
+grzegorz_log.txt

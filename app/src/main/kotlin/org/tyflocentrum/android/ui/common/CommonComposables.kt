@@ -2,11 +2,13 @@ package net.tyflopodcast.tyflocentrum.ui.common
 
 import android.content.Intent
 import android.graphics.Typeface
+import android.text.InputType
 import android.text.SpannableString
 import android.text.method.LinkMovementMethod
 import android.text.util.Linkify
 import android.text.style.URLSpan
 import android.view.View
+import android.view.inputmethod.EditorInfo
 import android.widget.TextView
 import androidx.mediarouter.app.MediaRouteButton
 import androidx.compose.foundation.background
@@ -66,6 +68,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
@@ -73,6 +77,7 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
@@ -81,6 +86,7 @@ import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -92,6 +98,7 @@ import androidx.navigation.NavDestination
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavHostController
 import com.google.android.gms.cast.framework.CastButtonFactory
+import net.tyflopodcast.tyflocentrum.R
 import net.tyflopodcast.tyflocentrum.core.model.ContentKind
 import net.tyflopodcast.tyflocentrum.core.model.ContentKindLabelPosition
 import net.tyflopodcast.tyflocentrum.core.model.PlayerRequest
@@ -134,6 +141,24 @@ fun Announcement(message: String?) {
     }
 }
 
+/**
+ * Nakłada dostępną nazwę WPROST na klikalny węzeł elementu (Button/IconButton/clickable).
+ *
+ * Powod (potwierdzone zrzutami drzewa a11y na urzadzeniu, czytnik Jeshuo):
+ * Compose dla Button/IconButton z ikona+tekstem trzyma klikalnosc na jednym wezle,
+ * a contentDescription ikony/tekst na osobnych wezlach-dzieciach. TalkBack scala
+ * poddrzewo i czyta etykiete, ale Jeshuo (i inne czytniki nie-scalajace) fokusuja
+ * sam klikalny wezel - ktory ma pusta nazwe -> cisza. clearAndSetSemantics usuwa
+ * wezly-dzieci z drzewa a11y i klada nazwe oraz role wprost na klikalny wezel,
+ * dzieki czemu czytaja go OBA czytniki rownorzednie. Stosuj na KAZDYM klikalnym
+ * elemencie, w ktorym etykieta zyje na dziecku (ikona z contentDescription / Text).
+ */
+fun Modifier.semanticButton(label: String, role: Role = Role.Button): Modifier =
+    this.clearAndSetSemantics {
+        contentDescription = label
+        this.role = role
+    }
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AppScreenScaffold(
@@ -162,7 +187,8 @@ fun AppScreenScaffold(
                 navigationIcon = {
                     if (rootDestination == null) {
                         IconButton(
-                            onClick = { navController.navigateUp() }
+                            onClick = { navController.navigateUp() },
+                            modifier = Modifier.semanticButton("Wróć")
                         ) {
                             Icon(
                                 imageVector = Icons.AutoMirrored.Filled.ArrowBack,
@@ -174,13 +200,19 @@ fun AppScreenScaffold(
                 actions = {
                     actions()
                     if (rootDestination != null) {
-                        IconButton(onClick = { navController.navigate("favorites") }) {
+                        IconButton(
+                            onClick = { navController.navigate("favorites") },
+                            modifier = Modifier.semanticButton("Ulubione")
+                        ) {
                             Icon(
                                 imageVector = Icons.Filled.Star,
                                 contentDescription = "Ulubione"
                             )
                         }
-                        IconButton(onClick = { navController.navigate("settings") }) {
+                        IconButton(
+                            onClick = { navController.navigate("settings") },
+                            modifier = Modifier.semanticButton("Ustawienia")
+                        ) {
                             Icon(
                                 imageVector = Icons.Filled.Settings,
                                 contentDescription = "Ustawienia"
@@ -209,8 +241,14 @@ fun AppScreenScaffold(
                 if (rootDestination != null) {
                     NavigationBar {
                         RootDestination.entries.forEach { destination ->
+                            val selected = rootDestination == destination
                             NavigationBarItem(
-                                selected = rootDestination == destination,
+                                selected = selected,
+                                modifier = Modifier.clearAndSetSemantics {
+                                    contentDescription = destination.label
+                                    role = Role.Tab
+                                    stateDescription = if (selected) "zaznaczone" else "niezaznaczone"
+                                },
                                 onClick = {
                                     navController.navigate(destination.route) {
                                         popUpTo(navController.graph.startDestinationId) {
@@ -278,7 +316,10 @@ fun StatePane(
                 )
             }
             if (retryLabel != null && onRetry != null) {
-                Button(onClick = onRetry) {
+                Button(
+                    onClick = onRetry,
+                    modifier = Modifier.semanticButton(retryLabel)
+                ) {
                     Text(retryLabel)
                 }
             }
@@ -328,14 +369,14 @@ private fun MiniPlayerBar(
                     maxLines = 1
                 )
             }
-            TextButton(onClick = onOpenPlayer) {
+            TextButton(
+                onClick = onOpenPlayer,
+                modifier = Modifier.semanticButton("Otwórz")
+            ) {
                 Text("Otwórz")
             }
             IconButton(
-                modifier = Modifier.semantics {
-                    contentDescription = playbackActionLabel
-                    onClick(label = playbackActionLabel, action = null)
-                },
+                modifier = Modifier.semanticButton(playbackActionLabel),
                 onClick = onTogglePlayback
             ) {
                 Icon(
@@ -929,10 +970,16 @@ fun FilterChipRow(
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         options.forEachIndexed { index, label ->
+            val selected = index == selectedIndex
             FilterChip(
-                selected = index == selectedIndex,
+                selected = selected,
                 onClick = { onSelected(index) },
-                label = { Text(label) }
+                label = { Text(label) },
+                modifier = Modifier.clearAndSetSemantics {
+                    contentDescription = label
+                    role = Role.Tab
+                    stateDescription = if (selected) "zaznaczone" else "niezaznaczone"
+                }
             )
         }
     }
@@ -946,6 +993,8 @@ fun ToggleRow(
     modifier: Modifier = Modifier,
     supportingText: String? = null
 ) {
+    val toggleStateLabel = if (checked) "włączone" else "wyłączone"
+    val toggleName = listOfNotNull(title, supportingText?.takeIf { it.isNotBlank() }).joinToString(". ")
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -953,12 +1002,16 @@ fun ToggleRow(
                 color = MaterialTheme.colorScheme.surface,
                 shape = RoundedCornerShape(20.dp)
             )
-            .semantics(mergeDescendants = true) {}
             .toggleable(
                 value = checked,
                 role = Role.Switch,
                 onValueChange = onCheckedChange
             )
+            .clearAndSetSemantics {
+                contentDescription = toggleName
+                role = Role.Switch
+                stateDescription = toggleStateLabel
+            }
             .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -989,7 +1042,9 @@ fun OpenExternalButton(
 ) {
     val context = LocalContext.current
     Button(
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier
+            .fillMaxWidth()
+            .semanticButton(label),
         onClick = {
             val intent = Intent(Intent.ACTION_SEND).apply {
                 type = "text/plain"
@@ -1066,6 +1121,111 @@ private fun formatMiniPlayerTime(valueMs: Long): String {
         "%d:%02d:%02d".format(hours, minutes, seconds)
     } else {
         "%02d:%02d".format(minutes, seconds)
+    }
+}
+
+@Composable
+fun LabeledTextField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    label: String,
+    modifier: Modifier = Modifier,
+    fieldModifier: Modifier = Modifier,
+    singleLine: Boolean = false,
+    minLines: Int = 1,
+    isError: Boolean = false,
+    errorText: String? = null,
+    keyboardType: KeyboardType = KeyboardType.Text
+) {
+    // Pole edycji oparte na NATYWNYM android.widget.EditText (przez AndroidView), a NIE
+    // na Compose TextField. Powod (potwierdzony zrzutami drzewa a11y na urzadzeniu):
+    // Compose nigdy nie wystawia AccessibilityNodeInfo.hintText, a contentDescription
+    // ladowal na wezle-rodzicu/dziecku, nie na samym wezle edycji. TalkBack sklejal
+    // wezly i czytal etykiete, ale Jeshuo (i inne czytniki nie-scalajace) fokusuja TYLKO
+    // wewnetrzny EditText i mialy pusta nazwe -> cisza. Natywny EditText ma hint wprost
+    // na wlasciwym wezle (jak systemowe pole PIN), wiec czytaja go OBA czytniki rownorzednie.
+    // Widoczna etykieta i blad to osobne Text ukryte z drzewa a11y (clearAndSetSemantics),
+    // zeby nie bylo podwojnego odczytu ani dodatkowych przystankow fokusu.
+    val accessibleHint = if (isError && !errorText.isNullOrBlank()) {
+        "$label. $errorText"
+    } else {
+        label
+    }
+    val borderColor = (if (isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.outline).toArgb()
+    val textColor = MaterialTheme.colorScheme.onSurface.toArgb()
+    val hintColor = MaterialTheme.colorScheme.onSurfaceVariant.toArgb()
+    val imeOption = if (singleLine) EditorInfo.IME_ACTION_DONE else EditorInfo.IME_ACTION_NONE
+    val inputTypeFlags = when (keyboardType) {
+        KeyboardType.Email -> InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS
+        else -> InputType.TYPE_CLASS_TEXT or
+            (if (singleLine) 0 else InputType.TYPE_TEXT_FLAG_MULTI_LINE)
+    }
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.Medium,
+            color = if (isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.clearAndSetSemantics { }
+        )
+        AndroidView(
+            modifier = fieldModifier.fillMaxWidth(),
+            factory = { context ->
+                android.widget.EditText(context).apply {
+                    background = android.graphics.drawable.GradientDrawable().apply {
+                        cornerRadius = 8f * resources.displayMetrics.density
+                        setStroke((1f * resources.displayMetrics.density).toInt(), borderColor)
+                        setColor(android.graphics.Color.TRANSPARENT)
+                    }
+                    val padH = (16f * resources.displayMetrics.density).toInt()
+                    val padV = (14f * resources.displayMetrics.density).toInt()
+                    setPadding(padH, padV, padH, padV)
+                    setTextColor(textColor)
+                    setHintTextColor(hintColor)
+                    isSingleLine = singleLine
+                    if (!singleLine) {
+                        this.minLines = minLines
+                        gravity = android.view.Gravity.TOP or android.view.Gravity.START
+                    }
+                    inputType = inputTypeFlags
+                    imeOptions = imeOption
+                    // TextWatcher z guardem - blokuje petle gdy to my wpisujemy wartosc z Compose
+                    addTextChangedListener(object : android.text.TextWatcher {
+                        override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+                        override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+                        override fun afterTextChanged(s: android.text.Editable?) {
+                            if (getTag(R.id.labeled_text_field_self_update) == true) return
+                            onValueChange(s?.toString().orEmpty())
+                        }
+                    })
+                }
+            },
+            update = { editText ->
+                // hint = dostepna nazwa pola (czytana przez kazdy czytnik wprost z EditText);
+                // contentDescription jako zabezpieczenie dla czytnikow czytajacych desc.
+                editText.hint = accessibleHint
+                editText.contentDescription = accessibleHint
+                (editText.background as? android.graphics.drawable.GradientDrawable)
+                    ?.setStroke((1f * editText.resources.displayMetrics.density).toInt(), borderColor)
+                if (editText.text.toString() != value) {
+                    editText.setTag(R.id.labeled_text_field_self_update, true)
+                    editText.setText(value)
+                    editText.setSelection(value.length)
+                    editText.setTag(R.id.labeled_text_field_self_update, false)
+                }
+            }
+        )
+        if (!errorText.isNullOrBlank()) {
+            Text(
+                text = errorText,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.clearAndSetSemantics { }
+            )
+        }
     }
 }
 

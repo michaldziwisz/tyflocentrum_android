@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Klucz tagu chroniacy LabeledTextField przed petla zwrotna gdy wartosc
+         jest wpisywana programowo z Compose (a nie przez uzytkownika). -->
+    <item name="labeled_text_field_self_update" type="id" />
+</resources>

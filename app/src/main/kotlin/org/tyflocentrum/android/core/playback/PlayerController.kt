@@ -500,14 +500,20 @@ class PlayerController(
     }
 
     private fun updateUiState() {
-        val duration = player.duration.takeIf { it > 0 }
+        val isLive = _uiState.value.current?.isLive == true
+        // Dla streamu na zywo pozycja HLS rosnie bez przerwy, wiec gdybysmy ja
+        // przepisywali co 500 ms (petla progressJob), StateFlow emitowalby ciagle
+        // nowe wartosci i wymuszal rekompozycje mini-playera oraz ekranu odtwarzacza.
+        // Slabsze czytniki ekranu (np. Jeshuo) odczytuja wtedy w kolko element pod
+        // fokusem. Czas live i tak nie jest nigdzie pokazywany, wiec go nie ruszamy.
+        val duration = if (isLive) null else player.duration.takeIf { it > 0 }
         _uiState.value = _uiState.value.copy(
             isPlaying = player.isPlaying,
             playWhenReady = player.playWhenReady,
             isBuffering = player.playbackState == Player.STATE_BUFFERING,
             isRemotePlayback = player.deviceInfo.playbackType == DeviceInfo.PLAYBACK_TYPE_REMOTE,
             durationMs = duration,
-            elapsedMs = player.currentPosition.coerceAtLeast(0),
+            elapsedMs = if (isLive) 0L else player.currentPosition.coerceAtLeast(0),
             playbackRate = player.playbackParameters.speed
         )
     }
