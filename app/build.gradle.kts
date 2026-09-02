@@ -22,8 +22,8 @@ android {
         applicationId = "net.tyflopodcast.tyflocentrum"
         minSdk = 26
         targetSdk = 36
-        versionCode = 7
-        versionName = "1.0.6"
+        versionCode = 8
+        versionName = "1.0.7"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -48,6 +48,16 @@ android {
     }
 
     buildTypes {
+        debug {
+            // Osobny identyfikator, żeby wersja testowa instalowała się OBOK
+            // produkcyjnej z Google Play - inaczej instalacja wymagałaby
+            // odinstalowania apki użytkownika razem z jego danymi (ulubione,
+            // pozycje odtwarzania). Dzięki temu obie ikony widać naraz, co jest
+            // wygodne przy sprawdzaniu identyfikacji wizualnej.
+            // Nazwę widoczną na pulpicie nadpisuje src/debug/res/values/strings.xml
+            // (resValue tutaj kolidowałoby z app_name z zasobów głównych).
+            applicationIdSuffix = ".debug"
+        }
         release {
             isMinifyEnabled = false
             if (hasReleaseKeystore) {

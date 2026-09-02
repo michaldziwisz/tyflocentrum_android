@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Ikona adaptacyjna TyfloCentrum. Tło i symbol pochodzą z ikony wersji Windows
+    (Assets/AppIcon.ico), żeby identyfikacja wizualna była wspólna dla obu aplikacji.
+    Warstwa monochrome pozwala systemowi (Android 13+, Material You) pokolorować
+    ikonę zgodnie z motywem użytkownika.
+-->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/ic_launcher_background" />
+    <foreground android:drawable="@mipmap/ic_launcher_foreground" />
+    <monochrome android:drawable="@mipmap/ic_launcher_monochrome" />
+</adaptive-icon>

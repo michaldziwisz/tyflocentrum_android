@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Nazwa wersji testowej. Wariant debug instaluje się obok produkcyjnej apki
+    z Google Play (osobny applicationId), więc na pulpicie muszą być rozróżnialne
+    również dla czytnika ekranu - stąd inna nazwa, nie tylko inna ikona.
+-->
+<resources>
+    <string name="app_name">Tyflocentrum (test)</string>
+</resources>

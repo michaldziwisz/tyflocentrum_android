@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Kolory identyfikacji wizualnej TyfloCentrum, wspólne z wersją Windows. -->
+<resources>
+    <!-- Granat kafla ikony, ten sam co w AppIcon.ico aplikacji Windows. -->
+    <color name="ic_launcher_background">#02091D</color>
+</resources>

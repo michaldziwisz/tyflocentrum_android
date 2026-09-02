@@ -1,0 +1,5 @@
+Nowa ikona aplikacji, wspólna z wersją na Windows.
+
+• Ikona TyfloCentrum jest teraz taka sama jak w wersji na komputer — granatowe tło i ten sam symbol. Dzięki temu obie aplikacje łatwiej rozpoznać jako jedną rodzinę.
+• Ikona podąża za motywem systemu (Android 13 i nowsze), więc dopasowuje się do kolorów pulpitu.
+• Wariant okrągły ikony jest wreszcie faktycznie okrągły — wcześniej był kopią kwadratowego.
