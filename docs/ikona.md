@@ -72,3 +72,37 @@ kafla po `paste()` z maską.
 Czego test **nie** sprawdza: jak ikona wygląda na konkretnym launcherze i czy
 kontrast symbolu wobec tła jest wystarczający po pokolorowaniu przez Material
 You. To wymaga urządzenia.
+
+## Ikona w karcie sklepu to OSOBNY zasób — wydanie wersji jej nie zmienia
+
+Najważniejsza pułapka tego obszaru, złapana dzień po wydaniu 1.0.7. Ikona
+aplikacji istnieje w Google Play w **dwóch niezależnych miejscach**:
+
+| gdzie widać | skąd pochodzi | co ją aktualizuje |
+|---|---|---|
+| pulpit telefonu, lista aplikacji | `res/mipmap-*` w APK/AAB | wydanie nowej wersji |
+| karta sklepu, wyniki wyszukiwania w Play | grafika 512x512 w listingu | **wyłącznie** `edits.images` |
+
+Wydanie 1.0.7 podmieniło pierwszą i nie tknęło drugiej, bo `fastlane/Fastfile`
+ma `skip_upload_images: true`. Skutek dla użytkownika: w sklepie i na karcie
+aplikacji stara ikona, mimo że po instalacji na pulpicie jest nowa. Zgłoszenie
+brzmi wtedy „ikona się nie zmieniła", choć wydanie było poprawne.
+
+Stan listingu odczytujemy i zmieniamy osobno:
+
+```bash
+python3 tools/stan_ikony_listingu.py                      # co wisi w sklepie (tylko odczyt)
+python3 tools/wgraj_ikone_listingu.py <plik.png>          # PRÓBA, nic nie zatwierdza
+python3 tools/wgraj_ikone_listingu.py <plik.png> --zapisz # zapis do karty sklepu
+```
+
+`--zapisz` jest wymagane świadomie: karta sklepu jest widoczna publicznie, więc
+przypadkowe uruchomienie narzędzia nie może jej zmienić. Po zapisie narzędzie
+czyta stan z **nowej** edycji, bo odczyt z edycji, która zapisywała, pokazałby
+zamiar, a nie skutek.
+
+Dowodem zmiany jest suma SHA-256 grafiki zwracana przez API (oraz nowy adres
+`lh3.googleusercontent.com`), nie sam brak błędu przy wysyłce.
+
+Wniosek na przyszłość: po każdej zmianie identyfikacji wizualnej sprawdź OBA
+miejsca. „Ikona wydana" bez odczytu listingu jest twierdzeniem o połowie zasobów.

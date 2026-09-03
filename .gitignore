@@ -26,3 +26,6 @@ vendor/bundle/
 # Klucz service accountu Google Play - NIGDY do repo (w CI przez sekret)
 play-service-account*.json
 *-play-sa.json
+
+# katalog robocze: kopie zapasowe i materialy pomiarowe sesji, nie czesc projektu
+/robocze/
