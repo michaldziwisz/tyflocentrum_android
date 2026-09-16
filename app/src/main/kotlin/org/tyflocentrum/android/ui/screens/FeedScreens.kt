@@ -11,10 +11,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.outlined.Article
 import androidx.compose.material.icons.outlined.LibraryMusic
 import androidx.compose.material.icons.outlined.MenuBook
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -33,9 +36,17 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
+import kotlinx.coroutines.delay
+import net.tyflopodcast.tyflocentrum.core.PowodOdswiezenia
+import net.tyflopodcast.tyflocentrum.core.ScalanieNowosci
+import net.tyflopodcast.tyflocentrum.core.StanSwiezosci
+import net.tyflopodcast.tyflocentrum.core.StrategiaOdswiezania
 import androidx.navigation.NavHostController
 import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
@@ -88,6 +99,13 @@ fun NewsScreen(
     var articlePage by remember { mutableIntStateOf(cachedState?.nextArticlePage ?: 1) }
     var podcastTotalPages by remember { mutableStateOf(cachedState?.podcastTotalPages) }
     var articleTotalPages by remember { mutableStateOf(cachedState?.articleTotalPages) }
+    var swiezosc by remember { mutableStateOf(cachedState?.swiezosc ?: StanSwiezosci()) }
+
+    // Stan listy trzymany jawnie: po doklejeniu nowosci na gore musimy przywrocic
+    // dokladnie te pozycje, na ktorej byl uzytkownik.
+    val listState = rememberLazyListState()
+    val coroutineScope = rememberCoroutineScope()
+    val view = LocalView.current
 
     fun syncCache() {
         appContainer.repository.storeNewsScreenCache(
@@ -96,7 +114,8 @@ fun NewsScreen(
                 nextPodcastPage = podcastPage,
                 nextArticlePage = articlePage,
                 podcastTotalPages = podcastTotalPages,
-                articleTotalPages = articleTotalPages
+                articleTotalPages = articleTotalPages,
+                swiezosc = swiezosc
             )
         )
     }
@@ -163,6 +182,7 @@ fun NewsScreen(
                 articleTotalPages = articles?.totalPages ?: articleTotalPages
                 if (podcasts != null) podcastPage = currentPodcastPage + 1
                 if (articles != null) articlePage = currentArticlePage + 1
+                swiezosc = swiezosc.zSukcesem(System.currentTimeMillis())
                 syncCache()
                 errorMessage = if (items.isEmpty()) "Nie udało się pobrać danych. Spróbuj ponownie." else null
             }.onFailure {
@@ -172,6 +192,123 @@ fun NewsScreen(
             isLoading = false
             isLoadingMore = false
         }
+    }
+
+    /**
+     * Odswiezenie, ktore NIE psuje pozycji czytania ani fokusu TalkBacka.
+     *
+     * Rozni sie od `load(reset = true)` w sposob zasadniczy: `load` przebudowuje liste
+     * od zera (uzytkownik sam o to poprosil), a ta funkcja dokleja WYLACZNIE wpisy,
+     * ktorych wczesniej nie bylo, i zostawia reszte listy nietknieta. Wolaja ja powrot
+     * aplikacji na wierzch i wejscie na ekran - czyli sytuacje, w ktorych uzytkownik nie
+     * prosil o przebudowe, a osoba czytajaca czytnikiem stracilaby miejsce, w ktorym byla.
+     *
+     * Pobieramy tylko PIERWSZA strone. Odtwarzanie calej paginacji przy kazdym powrocie
+     * do aplikacji to kilkanascie zadan po to, zeby niemal zawsze dostac to, co juz mamy.
+     */
+    fun odswiezPoPowrocie(powod: PowodOdswiezenia) {
+        if (!StrategiaOdswiezania.czyOdswiezyc(
+                powod = powod,
+                stan = swiezosc,
+                trwaPobieranie = isLoading || isLoadingMore,
+                teraz = System.currentTimeMillis()
+            )
+        ) {
+            return
+        }
+
+        // Bez danych nie ma czego scalac - wtedy zwykle pelne wczytanie jest wlasciwe.
+        if (items.isEmpty()) {
+            load(reset = true)
+            return
+        }
+
+        scope.launch {
+            isLoading = true
+            swiezosc = swiezosc.zProba(System.currentTimeMillis())
+
+            runCatching {
+                val podcasts = async {
+                    appContainer.repository.fetchPodcastSummariesPage(1, perPage = 20, pomijCache = true)
+                }
+                val articles = async {
+                    appContainer.repository.fetchArticleSummariesPage(1, perPage = 20, pomijCache = true)
+                }
+                podcasts.await() to articles.await()
+            }.onSuccess { (podcasts, articles) ->
+                val swieze = buildList {
+                    podcasts.items.forEach { add(NewsItem(ContentKind.PODCAST, it)) }
+                    articles.items.forEach { add(NewsItem(ContentKind.ARTICLE, it)) }
+                }
+                swiezosc = swiezosc.zSukcesem(System.currentTimeMillis())
+
+                if (swieze.isNotEmpty()) {
+                    val wynik = ScalanieNowosci.scal(
+                        biezace = items.toList(),
+                        swieze = swieze,
+                        identyfikator = { it.uniqueId },
+                        komparator = compareByDescending<NewsItem> { it.post.date }
+                            .thenBy { it.kind.ordinal }
+                            .thenByDescending { it.post.id }
+                    )
+
+                    // ROZLACZENIE LISTY OD SERWERA: gdy ZADEN swiezy wpis nie jest nam
+                    // znany, to nie sa „nowosci” - to znaczy, ze nowych tresci jest wiecej
+                    // niz jedna strona, a scalenie zrobiloby DZIURE w ciaglosci listy
+                    // (najnowsze, potem brak, potem stare). Wtedy uczciwiej przebudowac
+                    // liste, mimo utraty pozycji: udawanie ciaglosci jest gorsze.
+                    if (wynik.liczbaNowych == swieze.size) {
+                        load(reset = true)
+                        return@onSuccess
+                    }
+
+                    if (wynik.maNowe) {
+                        // Zapamietanie pozycji PRZED podmiana listy. Sama wstawka na
+                        // indeks 0 przesunelaby zawartosc pod palcem czytajacego.
+                        val pierwszyWidocznyIndeks = listState.firstVisibleItemIndex
+                        val przesuniecie = listState.firstVisibleItemScrollOffset
+
+                        items.clear()
+                        items.addAll(wynik.elementy)
+                        syncCache()
+
+                        // Korekta synchroniczna, bez animacji: element, na ktorym stal
+                        // uzytkownik, ma zostac dokladnie tam, gdzie byl.
+                        coroutineScope.launch {
+                            listState.scrollToItem(
+                                pierwszyWidocznyIndeks + wynik.liczbaNowych,
+                                przesuniecie
+                            )
+                        }
+
+                        // OGLOSZENIE dla TalkBacka: wysylane PO scaleniu i z opoznieniem,
+                        // bo w chwili powrotu do aplikacji czytnik oglasza swoje rzeczy
+                        // (nazwa aplikacji, element z fokusem) i natychmiastowy komunikat
+                        // zostalby zagluszony.
+                        ScalanieNowosci.komunikatONowych(wynik.liczbaNowych)?.let { komunikat ->
+                            coroutineScope.launch {
+                                delay(1_200)
+                                view.announceForAccessibility(komunikat)
+                            }
+                        }
+                    }
+                }
+            }.onFailure {
+                // Ciche niepowodzenie: uzytkownik o nic nie prosil, wiec nie zabieramy mu
+                // listy, ktora czyta, i nie zamieniamy jej na komunikat o bledzie.
+                // Ponowienie ogranicza karencja w `StrategiaOdswiezania`.
+            }
+
+            isLoading = false
+            syncCache()
+        }
+    }
+
+    // POWROT APLIKACJI NA WIERZCH. To jest sedno naprawy: `LaunchedEffect(Unit)` ponizej
+    // nie powtarza sie po powrocie z app switchera (kompozycja nie zostala zniszczona),
+    // a straznik `items.isEmpty()` i tak by nic nie pobral, bo dane sa.
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        odswiezPoPowrocie(PowodOdswiezenia.POWROT_Z_TLA)
     }
 
     LaunchedEffect(Unit) {
@@ -184,9 +321,26 @@ fun NewsScreen(
         navController = navController,
         title = "Nowości",
         rootDestination = rootDestination,
-        snackbarHostState = snackbarHostState
+        snackbarHostState = snackbarHostState,
+        actions = {
+            // JAWNA droga odswiezenia. Do tej pory ekran nie mial ZADNEJ: ani gestu,
+            // ani przycisku, wiec po nieudanym zimnym starcie nie bylo jak ponowic.
+            // Przycisk jest wazniejszy niz gest pociagniecia, bo gest bywa dla czytnika
+            // ekranu trudny do wykonania, a przycisk znajduje sie zwyklym przegladaniem.
+            IconButton(
+                onClick = { odswiezPoPowrocie(PowodOdswiezenia.ZADANIE_UZYTKOWNIKA) },
+                enabled = !isLoading,
+                modifier = Modifier.semanticButton("Odśwież")
+            ) {
+                androidx.compose.material3.Icon(
+                    imageVector = Icons.Filled.Refresh,
+                    contentDescription = "Odśwież"
+                )
+            }
+        }
     ) { padding ->
         LazyColumn(
+            state = listState,
             modifier = Modifier.fillMaxSize(),
             contentPadding = contentPaddingWithInsets(padding),
             verticalArrangement = Arrangement.spacedBy(8.dp)

@@ -14,6 +14,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.asRequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
+import net.tyflopodcast.tyflocentrum.core.StanSwiezosci
 import net.tyflopodcast.tyflocentrum.core.model.Availability
 import net.tyflopodcast.tyflocentrum.core.model.Category
 import net.tyflopodcast.tyflocentrum.core.model.Comment
@@ -30,6 +31,7 @@ import net.tyflopodcast.tyflocentrum.core.model.htmlToPlainText
 import retrofit2.Response
 import retrofit2.http.Body
 import retrofit2.http.GET
+import retrofit2.http.Header
 import retrofit2.http.Headers
 import retrofit2.http.Multipart
 import retrofit2.http.POST
@@ -53,7 +55,16 @@ interface WpApiService {
         @Query("order") order: String = "desc",
         @Query("_fields") fields: String = SUMMARY_FIELDS,
         @Query("categories") categoryId: Int? = null,
-        @Query("search") search: String? = null
+        @Query("search") search: String? = null,
+        /**
+         * Naglowek ustawiany TYLKO dla odswiezenia pierwszej strony.
+         *
+         * Nie przypinamy `no-cache` na stale w adnotacji `@Headers`, bo serwisy nie
+         * wysylaja ETag ani Last-Modified: dopoki tak jest, cache i tak idzie do sieci,
+         * a staly naglowek zablokowalby tanie odpowiedzi 304, gdyby WordPress zaczal
+         * kiedys wysylac walidatory. Parametr `null` = zachowanie domyslne OkHttp.
+         */
+        @Header("Cache-Control") cacheControl: String? = null
     ): Response<List<WpPostSummary>>
 
     @GET("wp/v2/posts/{id}")
@@ -183,7 +194,16 @@ data class NewsScreenCache(
     val nextPodcastPage: Int = 1,
     val nextArticlePage: Int = 1,
     val podcastTotalPages: Int? = null,
-    val articleTotalPages: Int? = null
+    val articleTotalPages: Int? = null,
+    /**
+     * Znaczniki swiezosci przenoszone RAZEM z danymi ekranu.
+     *
+     * Bez nich cache ekranowy byl tylko „pokaz i pomin pobranie”: repozytorium jest
+     * singletonem zyjacym tyle, co proces, wiec raz zapisana lista wygladala na wieczna.
+     * Ekran nie mial czym stwierdzic, ze dane sa stare, i nie siegal do sieci.
+     * Ta para pol zamienia go w „pokaz natychmiast, potem dociagnij”.
+     */
+    val swiezosc: StanSwiezosci = StanSwiezosci()
 )
 
 data class MagazineIssueScreenCache(
@@ -274,12 +294,32 @@ class TyfloRepository(
         magazineIssueScreenCaches[issueId] = cache
     }
 
-    suspend fun fetchPodcastSummariesPage(page: Int, perPage: Int, categoryId: Int? = null): PagedResult<WpPostSummary> {
-        return podcastApi.getPostSummaries(perPage = perPage, page = page, categoryId = categoryId).toPagedResult()
+    suspend fun fetchPodcastSummariesPage(
+        page: Int,
+        perPage: Int,
+        categoryId: Int? = null,
+        pomijCache: Boolean = false
+    ): PagedResult<WpPostSummary> {
+        return podcastApi.getPostSummaries(
+            perPage = perPage,
+            page = page,
+            categoryId = categoryId,
+            cacheControl = if (pomijCache) "no-cache" else null
+        ).toPagedResult()
     }
 
-    suspend fun fetchArticleSummariesPage(page: Int, perPage: Int, categoryId: Int? = null): PagedResult<WpPostSummary> {
-        return articleApi.getPostSummaries(perPage = perPage, page = page, categoryId = categoryId).toPagedResult()
+    suspend fun fetchArticleSummariesPage(
+        page: Int,
+        perPage: Int,
+        categoryId: Int? = null,
+        pomijCache: Boolean = false
+    ): PagedResult<WpPostSummary> {
+        return articleApi.getPostSummaries(
+            perPage = perPage,
+            page = page,
+            categoryId = categoryId,
+            cacheControl = if (pomijCache) "no-cache" else null
+        ).toPagedResult()
     }
 
     suspend fun fetchPodcastSearchSummaries(query: String): List<WpPostSummary> {
