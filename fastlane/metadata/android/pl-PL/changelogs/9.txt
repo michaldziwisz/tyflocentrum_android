@@ -1,0 +1,7 @@
+Nowe treści dociągają się teraz po powrocie do aplikacji z listy ostatnich zadań. Dotąd zdarzało się, że lista zostawała nieodświeżona, dopóki aplikacja nie została uruchomiona od nowa.
+
+Nowe wpisy dokładają się nad dotychczasowymi, bez zmiany miejsca czytania: TalkBack nie gubi pozycji ani fokusu, a o liczbie nowych treści informuje komunikat.
+
+Doszedł przycisk „Odśwież” na ekranie Nowości.
+
+Odświeżanie oszczędza baterię: pobiera tylko wtedy, gdy dane są starsze niż dwie minuty.
