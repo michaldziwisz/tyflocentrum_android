@@ -57,6 +57,11 @@ jobs:
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          # Domyslnie akcja instaluje pakiet 'tools', ktorego NIE MA juz
+          # w cmdline-tools 16.0 - sdkmanager konczy sie wtedy exit 1.
+          # Pakiety, ktore realnie potrzebujemy, instaluje krok ponizej.
+          packages: ''
 
       - name: Install Android SDK packages
         run: sdkmanager "platforms;android-36" "build-tools;36.0.0" "platform-tools"
