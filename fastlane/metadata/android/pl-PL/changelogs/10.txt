@@ -1,0 +1,1 @@
+Poprawiono wczytywanie artykułów i stron Tyfloświata. Po przejściowym błędzie aplikacja ponawia pobranie. Jeśli treść nadal się nie pojawi, można spróbować ponownie bez wychodzenia z artykułu. Poprawiono także obsługę pamięci podręcznej i powrotu do już otwartego tekstu.
