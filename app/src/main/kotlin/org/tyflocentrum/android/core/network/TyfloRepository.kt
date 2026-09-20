@@ -2,10 +2,19 @@ package net.tyflopodcast.tyflocentrum.core.network
 
 import java.io.File
 import java.io.IOException
+import java.net.SocketTimeoutException
 import java.net.URI
+import java.time.ZonedDateTime
+import java.time.format.DateTimeFormatter
+import javax.net.ssl.SSLException
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.Serializable
+import net.tyflopodcast.tyflocentrum.core.model.FavoriteArticleOrigin
 import net.tyflopodcast.tyflocentrum.BuildConfig
 import okhttp3.FormBody
 import okhttp3.MediaType.Companion.toMediaType
@@ -28,6 +37,8 @@ import net.tyflopodcast.tyflocentrum.core.model.TextVersionReference
 import net.tyflopodcast.tyflocentrum.core.model.WpPostDetail
 import net.tyflopodcast.tyflocentrum.core.model.WpPostSummary
 import net.tyflopodcast.tyflocentrum.core.model.htmlToPlainText
+import org.jsoup.Jsoup
+import org.jsoup.parser.Parser
 import retrofit2.Response
 import retrofit2.http.Body
 import retrofit2.http.GET
@@ -38,12 +49,12 @@ import retrofit2.http.POST
 import retrofit2.http.Part
 import retrofit2.http.Path
 import retrofit2.http.Query
-import org.jsoup.Jsoup
-import org.jsoup.parser.Parser
 
 private const val POST_FIELDS = "id,date,title,excerpt,content,guid"
 private const val SUMMARY_FIELDS = "id,date,link,title,excerpt"
 private const val CATEGORY_FIELDS = "id,name,count"
+private const val DETAIL_OPERATION_TIMEOUT_MS = 30_000L
+private const val DETAIL_ATTEMPT_TIMEOUT_MS = 12_000L
 
 interface WpApiService {
     @GET("wp/v2/posts")
@@ -70,7 +81,8 @@ interface WpApiService {
     @GET("wp/v2/posts/{id}")
     suspend fun getPostDetail(
         @Path("id") id: Int,
-        @Query("_fields") fields: String = POST_FIELDS
+        @Query("_fields") fields: String = POST_FIELDS,
+        @Header("Cache-Control") cacheControl: String? = null
     ): WpPostDetail
 
     @GET("wp/v2/categories")
@@ -116,7 +128,8 @@ interface WpApiService {
     @GET("wp/v2/pages/{id}")
     suspend fun getPageDetail(
         @Path("id") id: Int,
-        @Query("_fields") fields: String = POST_FIELDS
+        @Query("_fields") fields: String = POST_FIELDS,
+        @Header("Cache-Control") cacheControl: String? = null
     ): WpPostDetail
 
     @GET("wp/v2/pages")
@@ -341,7 +354,13 @@ class TyfloRepository(
         if (!refresh) {
             articleDetailsCache[id]?.let { return it }
         }
-        return articleApi.getPostDetail(id).also { articleDetailsCache[id] = it }
+        return fetchDetailWithRecovery(
+            key = DetailRequestKey(FavoriteArticleOrigin.POST, id),
+            refresh = refresh,
+            readCache = { articleDetailsCache[id] },
+            writeCache = { articleDetailsCache[id] = it },
+            fetch = { cacheControl -> articleApi.getPostDetail(id, cacheControl = cacheControl) }
+        )
     }
 
     suspend fun fetchPodcastCategoriesPage(page: Int, perPage: Int): PagedResult<Category> {
@@ -427,7 +446,13 @@ class TyfloRepository(
         if (!refresh) {
             tyfloswiatPageCache[id]?.let { return it }
         }
-        return articleApi.getPageDetail(id).also { tyfloswiatPageCache[id] = it }
+        return fetchDetailWithRecovery(
+            key = DetailRequestKey(FavoriteArticleOrigin.PAGE, id),
+            refresh = refresh,
+            readCache = { tyfloswiatPageCache[id] },
+            writeCache = { tyfloswiatPageCache[id] = it },
+            fetch = { cacheControl -> articleApi.getPageDetail(id, cacheControl = cacheControl) }
+        )
     }
 
     suspend fun fetchPodcastTextVersionReference(postId: Int, refresh: Boolean = false): TextVersionReference? {
@@ -492,6 +517,122 @@ class TyfloRepository(
     }
 
     private fun normalizedCategoryKey(categoryId: Int?): Int = categoryId ?: -1
+
+    private suspend fun fetchDetailWithRecovery(
+        key: DetailRequestKey,
+        refresh: Boolean,
+        readCache: () -> WpPostDetail?,
+        writeCache: (WpPostDetail) -> Unit,
+        fetch: suspend (cacheControl: String?) -> WpPostDetail
+    ): WpPostDetail {
+        if (!refresh) {
+            val cached = synchronized(detailRequestLock) {
+                readCache()
+            }
+            if (cached != null) {
+                currentCoroutineContext().ensureActive()
+                return cached
+            }
+        }
+        val operation = nextDetailOperationId(key)
+        val startedAtNanos = System.nanoTime()
+        return withTimeoutOrNull(DETAIL_OPERATION_TIMEOUT_MS) {
+            var attempt = 0
+            var lastError: Throwable? = null
+            while (attempt < 2) {
+                attempt += 1
+                try {
+                    val detail = withTimeoutOrNull(DETAIL_ATTEMPT_TIMEOUT_MS) {
+                        fetch(if (refresh) "no-cache" else null)
+                    } ?: throw SocketTimeoutException("Przekroczono limit ${DETAIL_ATTEMPT_TIMEOUT_MS} ms na pojedynczą próbę pobrania.")
+                    validateDetail(detail, key)
+                    currentCoroutineContext().ensureActive()
+                    synchronized(detailRequestLock) {
+                        if (isLatestDetailOperationLocked(key, operation)) {
+                            writeCache(detail)
+                        }
+                    }
+                    return@withTimeoutOrNull detail
+                } catch (error: Throwable) {
+                    if (error is CancellationException) {
+                        throw error
+                    }
+                    lastError = error
+                    if (attempt >= 2 || !shouldRetryDetailFetch(error)) {
+                        throw error
+                    }
+                    val delayMillis = retryDelayMillis(error) ?: 0L
+                    if (delayMillis > 0L) {
+                        currentCoroutineContext().ensureActive()
+                        val elapsedMillis = (System.nanoTime() - startedAtNanos) / 1_000_000L
+                        val remainingMillis = DETAIL_OPERATION_TIMEOUT_MS - elapsedMillis
+                        if (delayMillis > remainingMillis.coerceAtLeast(0L)) {
+                            throw error
+                        }
+                        kotlinx.coroutines.delay(delayMillis)
+                    }
+                }
+            }
+            throw lastError ?: IOException("Nie udało się pobrać artykułu.")
+        } ?: throw SocketTimeoutException("Przekroczono łączny limit ${DETAIL_OPERATION_TIMEOUT_MS} ms pobierania.")
+    }
+
+    private fun validateDetail(detail: WpPostDetail, key: DetailRequestKey) {
+        if (detail.id != key.id) {
+            throw IllegalStateException("Serwer zwrócił treść o innym identyfikatorze.")
+        }
+    }
+
+    private fun shouldRetryDetailFetch(error: Throwable): Boolean {
+        return when (error) {
+            is SocketTimeoutException -> true
+            is SSLException -> false
+            is IOException -> true
+            is retrofit2.HttpException -> error.code() in setOf(408, 429, 500, 502, 503, 504)
+            else -> false
+        }
+    }
+
+    private fun retryDelayMillis(error: Throwable): Long? {
+        val httpError = error as? retrofit2.HttpException ?: return null
+        val value = httpError.response()?.headers()?.get("Retry-After") ?: return null
+        return parseRetryAfterMillis(value)
+    }
+
+    private fun parseRetryAfterMillis(value: String): Long? {
+        val trimmed = value.trim()
+        val digitPrefix = trimmed.takeWhile { it.isDigit() }
+        if (digitPrefix.isNotEmpty() && digitPrefix.length == trimmed.length) {
+            val seconds = digitPrefix.toLongOrNull() ?: return DETAIL_OPERATION_TIMEOUT_MS + 1L
+            val millis = seconds.coerceAtLeast(0L)
+            return if (millis > Long.MAX_VALUE / 1000L) DETAIL_OPERATION_TIMEOUT_MS + 1L else millis * 1000L
+        }
+        val retryAt = runCatching {
+            ZonedDateTime.parse(trimmed, DateTimeFormatter.RFC_1123_DATE_TIME)
+        }.getOrNull() ?: return null
+        val millis = retryAt.toInstant().toEpochMilli() - System.currentTimeMillis()
+        return millis.coerceAtLeast(0L)
+    }
+
+    private fun nextDetailOperationId(key: DetailRequestKey): Long {
+        synchronized(detailRequestLock) {
+            val next = (detailRequestVersions[key] ?: 0L) + 1L
+            detailRequestVersions[key] = next
+            return next
+        }
+    }
+
+    private fun isLatestDetailOperationLocked(key: DetailRequestKey, operation: Long): Boolean {
+        return detailRequestVersions[key] == operation
+    }
+
+    private data class DetailRequestKey(
+        val origin: FavoriteArticleOrigin,
+        val id: Int
+    )
+
+    private val detailRequestLock = Any()
+    private val detailRequestVersions = mutableMapOf<DetailRequestKey, Long>()
 
     private fun loadCommentFormContext(postLink: URI): CommentFormContext {
         val response = httpClient.newCall(
