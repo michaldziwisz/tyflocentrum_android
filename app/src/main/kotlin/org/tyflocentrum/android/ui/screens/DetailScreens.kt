@@ -52,6 +52,10 @@ import androidx.core.content.ContextCompat.startActivity
 import androidx.core.net.toUri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import net.tyflopodcast.tyflocentrum.BuildConfig
 import net.tyflopodcast.tyflocentrum.core.model.AppSettings
@@ -82,6 +86,33 @@ import net.tyflopodcast.tyflocentrum.ui.common.ToggleRow
 private const val APP_SUPPORT_URL = "https://michaldziwisz.github.io/tyflocentrum_android/"
 private const val APP_PRIVACY_POLICY_URL = "https://michaldziwisz.github.io/tyflocentrum_android/privacy/"
 private const val APP_SUPPORT_EMAIL = "mailto:michal@dziwisz.net"
+
+internal suspend fun <T> runDetailLoadSafely(
+    onStart: () -> Unit,
+    load: suspend () -> T,
+    onSuccess: (T) -> Unit,
+    onFailure: (Throwable) -> Unit,
+    onFinally: () -> Unit
+) {
+    onStart()
+    val coroutineContext = currentCoroutineContext()
+    var cancelled = false
+    try {
+        val loaded = load()
+        coroutineContext.ensureActive()
+        onSuccess(loaded)
+    } catch (error: CancellationException) {
+        cancelled = true
+        throw error
+    } catch (error: Throwable) {
+        coroutineContext.ensureActive()
+        onFailure(error)
+    } finally {
+        if (!cancelled && coroutineContext.isActive) {
+            onFinally()
+        }
+    }
+}
 
 @Composable
 fun PodcastDetailScreen(
@@ -294,25 +325,46 @@ fun ArticleDetailScreen(
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
     var detail by remember(articleId, origin) { mutableStateOf(cachedDetail) }
-    var error by remember { mutableStateOf<String?>(null) }
+    var error by remember(articleId, origin) { mutableStateOf<String?>(null) }
     var isLoading by remember(articleId, origin) { mutableStateOf(cachedDetail == null) }
+    var refreshNonce by remember(articleId, origin) { mutableIntStateOf(0) }
+    var isManualRetryInFlight by remember(articleId, origin) { mutableStateOf(false) }
 
-    LaunchedEffect(articleId, origin) {
-        if (detail == null) {
-            isLoading = true
+    LaunchedEffect(articleId, origin, refreshNonce) {
+        if (detail?.content?.rendered?.isNotBlank() == true) {
+            return@LaunchedEffect
         }
-        runCatching {
-            when (origin) {
-                FavoriteArticleOrigin.POST -> appContainer.repository.fetchArticleDetail(articleId)
-                FavoriteArticleOrigin.PAGE -> appContainer.repository.fetchTyfloswiatPage(articleId)
+        val isManualRefresh = refreshNonce > 0
+        runDetailLoadSafely(
+            onStart = {
+                if (detail == null) {
+                    isLoading = true
+                }
+                error = null
+                if (isManualRefresh) {
+                    isManualRetryInFlight = true
+                }
+            },
+            load = {
+                when (origin) {
+                    FavoriteArticleOrigin.POST -> appContainer.repository.fetchArticleDetail(articleId, refresh = isManualRefresh)
+                    FavoriteArticleOrigin.PAGE -> appContainer.repository.fetchTyfloswiatPage(articleId, refresh = isManualRefresh)
+                }
+            },
+            onSuccess = { loaded ->
+                detail = loaded
+            },
+            onFailure = {
+                if (isManualRefresh) {
+                    detail = null
+                }
+                error = "Nie udało się pobrać szczegółów artykułu."
+            },
+            onFinally = {
+                isLoading = false
+                isManualRetryInFlight = false
             }
-        }.onSuccess {
-            detail = it
-            error = null
-        }.onFailure {
-            error = "Nie udało się pobrać szczegółów artykułu."
-        }
-        isLoading = false
+        )
     }
 
     val article = detail
@@ -329,6 +381,7 @@ fun ArticleDetailScreen(
         )
     }
     val isFavorite = favoriteItem != null && favorites.any { it.id == favoriteItem.id }
+    val isEmptyArticle = article != null && article.content.rendered.isBlank()
 
     AppScreenScaffold(
         navController = navController,
@@ -356,7 +409,21 @@ fun ArticleDetailScreen(
         if (isLoading && article == null) {
             DetailStatePane(padding, "Ładowanie artykułu…", true)
         } else if (error != null && article == null) {
-            DetailStatePane(padding, error.orEmpty(), false)
+            DetailStatePane(
+                paddingValues = padding,
+                message = error.orEmpty(),
+                loading = false,
+                retryLabel = if (isManualRetryInFlight) "Ponawianie…" else "Spróbuj ponownie",
+                onRetry = if (isManualRetryInFlight) null else ({ refreshNonce += 1 })
+            )
+        } else if (article != null && isEmptyArticle) {
+            DetailStatePane(
+                paddingValues = padding,
+                message = "Artykuł nie zawiera treści.",
+                loading = false,
+                retryLabel = if (isManualRetryInFlight) "Ponawianie…" else "Spróbuj ponownie",
+                onRetry = if (isManualRetryInFlight) null else ({ refreshNonce += 1 })
+            )
         } else if (article != null) {
             FullScreenScrollable(modifier = Modifier.padding(detailPadding(padding))) {
                 Text(text = article.formattedDate, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -1035,14 +1102,16 @@ fun SettingsScreen(
 fun DetailStatePane(
     paddingValues: PaddingValues,
     message: String,
-    loading: Boolean
+    loading: Boolean,
+    retryLabel: String? = null,
+    onRetry: (() -> Unit)? = null
 ) {
     Column(
         modifier = Modifier
             .fillMaxSize()
             .padding(detailPadding(paddingValues))
     ) {
-        StatePane(message = message, showLoading = loading)
+        StatePane(message = message, showLoading = loading, retryLabel = retryLabel, onRetry = onRetry)
     }
 }
 
