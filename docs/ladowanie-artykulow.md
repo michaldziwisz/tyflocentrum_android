@@ -11,7 +11,7 @@
 - Stan ekranu jest przypisany do identyfikatora artykułu i jego źródła. Anulowane zadanie nie uruchamia callbacków wyniku, błędu ani sprzątania nowszego żądania.
 - Już wyświetlony, niepusty artykuł nie jest ponownie pobierany wyłącznie dlatego, że wcześniej użyto ręcznego ponowienia.
 
-Renderer pozostaje natywnym `AccessibleHtmlText` opartym na TextView. Nie przenosimy mechanizmu WebKita z iOS. Nie zmieniamy pobierania podcastów ani powiadomień push. Po akceptacji poprawki przygotowano wydanie Google Play 1.0.9 (versionCode 10); sam stan wysyłki i publikacji wymaga potwierdzenia w sklepie.
+Renderer pozostaje natywnym `AccessibleHtmlText` opartym na TextView. Nie przenosimy mechanizmu WebKita z iOS. Nie zmieniamy pobierania podcastów ani powiadomień push. Po akceptacji poprawki wydanie Google Play 1.0.9 (versionCode 10) wysłano na produkcję. API potwierdziło `completed` i pełny zakres dystrybucji. Dowody oraz ograniczenia tego odczytu opisuje [raport wydania](wydanie-1.0.9.md).
 
 ## Weryfikacja
 
