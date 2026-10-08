@@ -115,6 +115,8 @@ import net.tyflopodcast.tyflocentrum.ui.common.AccessibleHtmlText
 import net.tyflopodcast.tyflocentrum.ui.common.AppScreenScaffold
 import net.tyflopodcast.tyflocentrum.ui.common.CastRouteButton
 import net.tyflopodcast.tyflocentrum.ui.common.ContentListItem
+import net.tyflopodcast.tyflocentrum.ui.common.rememberContentTimeLabels
+import net.tyflopodcast.tyflocentrum.core.network.timeRequest
 import net.tyflopodcast.tyflocentrum.ui.common.FullScreenScrollable
 import net.tyflopodcast.tyflocentrum.ui.common.LabeledTextField
 import net.tyflopodcast.tyflocentrum.ui.common.LinkifiedPlainText
@@ -788,6 +790,9 @@ fun MagazineIssueScreen(
     var issue by remember(issueId) { mutableStateOf(cachedState?.issue) }
     var tocItems by remember(issueId) { mutableStateOf(cachedState?.tocItems ?: emptyList()) }
     var pdfUrl by remember(issueId) { mutableStateOf(cachedState?.pdfUrl) }
+    val times = rememberContentTimeLabels(tocItems.map {
+        it.timeRequest(net.tyflopodcast.tyflocentrum.core.model.ContentKind.ARTICLE, FavoriteArticleOrigin.PAGE)
+    }, appContainer.contentTimes)
     var error by remember { mutableStateOf<String?>(null) }
     var isLoading by remember(issueId) { mutableStateOf(cachedState == null) }
     val context = LocalContext.current
@@ -849,6 +854,7 @@ fun MagazineIssueScreen(
                         ContentListItem(
                             title = item.title.plainText,
                             date = item.formattedDate,
+                            contentTime = times.label(item.timeRequest(net.tyflopodcast.tyflocentrum.core.model.ContentKind.ARTICLE, FavoriteArticleOrigin.PAGE)),
                             onOpen = { navController.navigate(AppRoutes.articleDetail(item.id, FavoriteArticleOrigin.PAGE)) }
                         )
                     }

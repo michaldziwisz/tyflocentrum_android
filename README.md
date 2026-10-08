@@ -14,7 +14,13 @@ Aplikacja zawiera:
 - ulubione,
 - dostęp do Tyfloradia,
 - kontakt tekstowy i głosowy,
-- przegląd numerów i spisu treści TyfloŚwiata.
+- przegląd numerów i spisu treści TyfloŚwiata,
+- orientacyjny czas czytania artykułów i długość audycji przy dacie na listach.
+
+Czas pojawia się także w wyszukiwarce i ulubionych. Brak wiarygodnych metadanych
+oznacza „Czas niedostępny”, nie blokuje otwierania ani odtwarzania. Nie pobieramy
+audio ani pełnych artykułów w celu ustalenia czasu na liście. Czas czytania dotyczy
+artykułu, nigdy całego numeru czasopisma lub PDF. Szczegóły: `docs/czasy-tresci.md`.
 
 ## Dostępność
 
@@ -46,7 +52,7 @@ APK debug:
 
 Repozytorium zawiera workflowy GitHub Actions:
 
-- `Android CI` uruchamia build i lint przy pushu do `main` oraz dla pull requestów,
+- `Android CI` uruchamia testy JVM, pomiar semantyki Compose na emulatorze, build i lint przy pushu do `main` oraz dla pull requestów,
 - `Release APK` pozwala ręcznie opublikować testowe wydanie jako GitHub Release,
 - `Deploy Site` publikuje statyczną stronę wsparcia i politykę prywatności do GitHub Pages.
 

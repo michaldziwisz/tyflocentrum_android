@@ -66,6 +66,8 @@ import net.tyflopodcast.tyflocentrum.ui.LocalAppContainer
 import net.tyflopodcast.tyflocentrum.ui.common.Announcement
 import net.tyflopodcast.tyflocentrum.ui.common.AppScreenScaffold
 import net.tyflopodcast.tyflocentrum.ui.common.ContentListItem
+import net.tyflopodcast.tyflocentrum.ui.common.rememberContentTimeLabels
+import net.tyflopodcast.tyflocentrum.core.network.timeRequest
 import net.tyflopodcast.tyflocentrum.ui.common.semanticButton
 import net.tyflopodcast.tyflocentrum.ui.common.FilterChipRow
 import net.tyflopodcast.tyflocentrum.ui.common.LabeledTextField
@@ -100,6 +102,7 @@ fun NewsScreen(
     var podcastTotalPages by remember { mutableStateOf(cachedState?.podcastTotalPages) }
     var articleTotalPages by remember { mutableStateOf(cachedState?.articleTotalPages) }
     var swiezosc by remember { mutableStateOf(cachedState?.swiezosc ?: StanSwiezosci()) }
+    val times = rememberContentTimeLabels(items.map { it.post.timeRequest(it.kind) }, appContainer.contentTimes)
 
     // Stan listy trzymany jawnie: po doklejeniu nowosci na gore musimy przywrocic
     // dokladnie te pozycje, na ktorej byl uzytkownik.
@@ -368,6 +371,7 @@ fun NewsScreen(
                 ContentListItem(
                     title = item.post.title.plainText,
                     date = item.post.formattedDate,
+                    contentTime = times.label(item.post.timeRequest(item.kind)),
                     kind = item.kind,
                     contentKindLabelPosition = settings.contentKindLabelPosition,
                     leadingContent = {
@@ -668,6 +672,8 @@ fun PodcastListScreen(
     var error by remember { mutableStateOf<String?>(null) }
     var isLoading by remember(categoryId) { mutableStateOf(cachedState == null) }
 
+    val times = rememberContentTimeLabels(items.map { it.timeRequest(ContentKind.PODCAST) }, appContainer.contentTimes)
+
     fun syncCache() {
         appContainer.repository.storePodcastListScreenCache(
             categoryId = categoryId,
@@ -729,6 +735,7 @@ fun PodcastListScreen(
                 ContentListItem(
                     title = item.title.plainText,
                     date = item.formattedDate,
+                    contentTime = times.label(item.timeRequest(ContentKind.PODCAST)),
                     kind = ContentKind.PODCAST,
                     contentKindLabelPosition = settings.contentKindLabelPosition,
                     leadingContent = {
@@ -789,6 +796,8 @@ fun ArticleListScreen(
     var totalPages by remember(categoryId) { mutableStateOf(cachedState?.totalPages) }
     var error by remember { mutableStateOf<String?>(null) }
     var isLoading by remember(categoryId) { mutableStateOf(cachedState == null) }
+
+    val times = rememberContentTimeLabels(items.map { it.timeRequest(ContentKind.ARTICLE) }, appContainer.contentTimes)
 
     fun syncCache() {
         appContainer.repository.storeArticleListScreenCache(
@@ -852,6 +861,7 @@ fun ArticleListScreen(
                 ContentListItem(
                     title = item.title.plainText,
                     date = item.formattedDate,
+                    contentTime = times.label(item.timeRequest(ContentKind.ARTICLE)),
                     kind = ContentKind.ARTICLE,
                     contentKindLabelPosition = settings.contentKindLabelPosition,
                     leadingContent = {
@@ -896,6 +906,7 @@ fun SearchScreen(
     var isLoading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var announcement by remember { mutableStateOf<String?>(null) }
+    val times = rememberContentTimeLabels(results.map { it.post.timeRequest(it.kind) }, appContainer.contentTimes)
 
     fun search() {
         val trimmed = query.trim()
@@ -1005,6 +1016,7 @@ fun SearchScreen(
                 ContentListItem(
                     title = item.post.title.plainText,
                     date = item.post.formattedDate,
+                    contentTime = times.label(item.post.timeRequest(item.kind)),
                     kind = item.kind,
                     contentKindLabelPosition = settings.contentKindLabelPosition,
                     leadingContent = {

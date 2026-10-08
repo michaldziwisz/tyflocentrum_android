@@ -75,6 +75,8 @@ import net.tyflopodcast.tyflocentrum.ui.LocalAppContainer
 import net.tyflopodcast.tyflocentrum.ui.common.AccessibleHtmlText
 import net.tyflopodcast.tyflocentrum.ui.common.AppScreenScaffold
 import net.tyflopodcast.tyflocentrum.ui.common.ContentListItem
+import net.tyflopodcast.tyflocentrum.ui.common.rememberContentTimeLabels
+import net.tyflopodcast.tyflocentrum.core.network.timeRequest
 import net.tyflopodcast.tyflocentrum.ui.common.FilterChipRow
 import net.tyflopodcast.tyflocentrum.ui.common.FullScreenScrollable
 import net.tyflopodcast.tyflocentrum.ui.common.LabeledTextField
@@ -839,6 +841,7 @@ fun FavoritesScreen(
     val filtered = favorites.filter {
         FavoritesFilter.entries[filterIndex].kind?.let { kind -> it.kind == kind } ?: true
     }
+    val times = rememberContentTimeLabels(filtered.mapNotNull { it.timeRequest() }, appContainer.contentTimes)
 
     AppScreenScaffold(
         navController = navController,
@@ -867,6 +870,7 @@ fun FavoritesScreen(
                         ContentListItem(
                             title = item.summary.title.plainText,
                             date = item.summary.formattedDate,
+                            contentTime = times.label(requireNotNull(item.timeRequest())),
                             kind = net.tyflopodcast.tyflocentrum.core.model.ContentKind.PODCAST,
                             contentKindLabelPosition = settings.contentKindLabelPosition,
                             onOpen = { navController.navigate(AppRoutes.podcastDetail(item.summary.id)) },
@@ -889,6 +893,7 @@ fun FavoritesScreen(
                         ContentListItem(
                             title = item.summary.title.plainText,
                             date = item.summary.formattedDate,
+                            contentTime = times.label(requireNotNull(item.timeRequest())),
                             kind = net.tyflopodcast.tyflocentrum.core.model.ContentKind.ARTICLE,
                             contentKindLabelPosition = settings.contentKindLabelPosition,
                             onOpen = { navController.navigate(AppRoutes.articleDetail(item.summary.id, item.origin)) },
