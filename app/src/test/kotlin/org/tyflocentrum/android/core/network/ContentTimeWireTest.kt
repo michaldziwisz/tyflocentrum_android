@@ -27,7 +27,7 @@ class ContentTimeWireTest {
     }.build()
     private fun wp() = Retrofit.Builder().baseUrl("https://example.test/wp-json/").client(client)
         .addConverterFactory(json.asConverterFactory("application/json".toMediaType())).build().create<WpApiService>()
-    private fun repo() = TyfloRepository(wp(),wp(),Retrofit.Builder().baseUrl("https://example.test/").client(client).addConverterFactory(json.asConverterFactory("application/json".toMediaType())).build().create(),client)
+    private fun repo(store: ContentTimeStore? = null) = TyfloRepository(wp(),wp(),Retrofit.Builder().baseUrl("https://example.test/").client(client).addConverterFactory(json.asConverterFactory("application/json".toMediaType())).build().create(),client,store)
 
     @Test fun realListsRequestOptionalMetadataWithoutFullTextOrAudio() = runBlocking {
         body = """[{"id":7,"date":"2026-10-08","title":{"rendered":"Treść"},"link":"https://example.test/7","tyflocentrum":false}]"""
@@ -74,6 +74,31 @@ class ContentTimeWireTest {
         assertEquals("tyflopodcast.net",urls.single().host)
         println("FAVORITE_URL_LEDGER=" + urls.single())
     }
+    @Test fun repositorySeedsInlinePodcastTimeAndKeepsEveryScreenCacheStable() = runBlocking {
+        val store=ContentTimeStore(RetrofitTimeTransport.create(client,json),clock={now})
+        val repository=repo(store)
+        body="""[{"id":7,"date":"2026-10-08","title":{"rendered":"Audycja"},"link":"https://example.test/7","tyflocentrum":{"schema_version":1,"audio_status":"ready","duration_seconds":60.1}}]"""
+        val post=repository.fetchPodcastSummariesPage(1,20).items.single()
+        store.load(listOf(post.timeRequest(ContentKind.PODCAST)))
+        assertEquals(1,urls.size)
+        assertEquals(61L,store.value(post.timeRequest(ContentKind.PODCAST))?.amount)
+        val paged=PagedScreenCache(listOf(post),2,5)
+        repository.storePodcastListScreenCache(3,paged)
+        repository.storeArticleListScreenCache(null,paged)
+        val news=NewsScreenCache(listOf(NewsItem(ContentKind.PODCAST,post)),2,3,5,6)
+        repository.storeNewsScreenCache(news)
+        val issue=MagazineIssueScreenCache(post.toDetailStub(),listOf(post),"https://example.test/issue.pdf")
+        repository.storeMagazineIssueScreenCache(8,issue)
+        repository.storeMagazineScreenCache(listOf(post))
+        store.invalidate(TimeSource.PODCAST)
+        assertSame(paged,repository.peekPodcastListScreenCache(3))
+        assertSame(paged,repository.peekArticleListScreenCache(null))
+        assertSame(news,repository.peekNewsScreenCache())
+        assertSame(issue,repository.peekMagazineIssueScreenCache(8))
+        assertEquals(listOf(post),repository.peekMagazineScreenCache())
+        assertEquals("PODCAST.7",repository.peekNewsScreenCache()!!.items.single().uniqueId)
+    }
+
     @Test fun blockedMetadataDoesNotBlockSourceListDetailOrPlaybackRoute() = runBlocking {
         val gate=CompletableDeferred<Unit>()
         val entered=CompletableDeferred<Unit>()

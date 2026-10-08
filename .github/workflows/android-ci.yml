@@ -53,7 +53,9 @@ jobs:
           arch: x86_64
           target: google_apis
           disable-animations: true
-          script: ./gradlew --no-daemon connectedDebugAndroidTest
+          script: |
+            ./gradlew --no-daemon connectedDebugAndroidTest
+            adb logcat -d -s System.out:I > app/build/content-time-semantics-logcat.txt
 
       - name: Upload test evidence
         if: always()
@@ -64,6 +66,7 @@ jobs:
             app/build/test-results/testDebugUnitTest/*.xml
             app/build/outputs/androidTest-results/connected/**/*.xml
             app/build/reports/lint-results-debug.xml
+            app/build/content-time-semantics-logcat.txt
           if-no-files-found: error
 
       - name: Upload debug APK

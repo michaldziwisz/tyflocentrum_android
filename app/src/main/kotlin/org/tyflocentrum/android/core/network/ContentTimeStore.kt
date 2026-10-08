@@ -179,7 +179,7 @@ class ContentTimeStore(
 
     private fun audioRecord(metadata: JsonElement?, modified: String?, request: TimeRequest): TimeRecord {
         val now = clock()
-        val knownSource = utcMillis(request.modifiedGmt)
+        val knownSource = listOfNotNull(utcMillis(request.modifiedGmt), utcMillis(modified)).maxOrNull()
         val generated = (metadata as? JsonObject)?.string("generated_at")
         val value = ContentTime.audio(metadata).takeUnless {
             knownSource != null && utcMillis(generated)?.let { it >= knownSource } != true

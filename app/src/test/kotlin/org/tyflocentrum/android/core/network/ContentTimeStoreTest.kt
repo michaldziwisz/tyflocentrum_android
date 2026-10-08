@@ -116,6 +116,12 @@ class ContentTimeStoreTest {
         assertEquals(1,calls)
         assertNull(store.value(request))
     }
+    @Test fun newerSourceDateInPodcastBatchRejectsOldGeneration() = runTest {
+        val store=ContentTimeStore(TimeTransport { _, _ -> Json.parseToJsonElement("""[{"id":1,"modified_gmt":"2026-10-08T11:00:00","tyflocentrum":{"schema_version":1,"audio_status":"ready","duration_seconds":60,"generated_at":"2026-10-07T10:00:00Z"}}]""") },clock={now})
+        val request=request(1,TimeSource.PODCAST)
+        store.load(listOf(request))
+        assertNull(store.value(request))
+    }
     @Test fun cacheIsBoundedAndUnsupportedNeverBecomesOneMinute() = runTest {
         val store=ContentTimeStore(TimeTransport { _, _ -> JsonNull },clock={now},capacity=10)
         store.load((1..25).map { request(it) })

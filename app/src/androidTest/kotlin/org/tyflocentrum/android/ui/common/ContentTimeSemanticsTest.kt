@@ -26,6 +26,25 @@ class ContentTimeTestRunner : AndroidJUnitRunner() {
 class ContentTimeSemanticsTest {
     @get:Rule val compose = createComposeRule()
 
+    private fun assertAndroidClickableName(name: String) {
+        val automation=androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().uiAutomation
+        fun matching(): List<android.view.accessibility.AccessibilityNodeInfo> {
+            val nodes=mutableListOf<android.view.accessibility.AccessibilityNodeInfo>()
+            fun visit(node: android.view.accessibility.AccessibilityNodeInfo?) {
+                if (node == null) return
+                if (node.contentDescription?.toString() == name) nodes += node
+                for (index in 0 until node.childCount) visit(node.getChild(index))
+            }
+            visit(automation.rootInActiveWindow)
+            return nodes
+        }
+        compose.waitUntil(5_000) { matching().any { it.isClickable } }
+        val nodes=matching()
+        assertEquals(1,nodes.size)
+        assertTrue(nodes.single().isClickable)
+        println("ANDROID_ACCESSIBILITY_NODE name=$name; clickable=${nodes.single().isClickable}; count=${nodes.size}; children=${nodes.single().childCount}")
+    }
+
     @Test fun timeIsOnClickableRowOnceAndActionsStillWork() {
         var opened = 0
         var listened = 0
@@ -46,6 +65,7 @@ class ContentTimeSemanticsTest {
         assertEquals(listOf("Słuchaj","Skopiuj link","Dodaj do ulubionych"),actions.map { it.label })
         row.performClick()
         compose.runOnIdle { actions.first().action(); assertEquals(1,opened); assertEquals(1,listened) }
+        assertAndroidClickableName(name)
         println("SEMANTICS_AUDIO="+compose.onRoot().printToString())
     }
 
@@ -77,6 +97,7 @@ class ContentTimeSemanticsTest {
         assertEquals(nodeId,after.fetchSemanticsNode().id)
         compose.onAllNodes(hasContentDescription("Czytanie:",substring=true),useUnmergedTree=true).assertCountEquals(1)
         compose.onNodeWithText("8 paź 2026 · Czytanie: około 2 min",useUnmergedTree=true).assertExists()
+        assertAndroidClickableName("Artykuł, 8 paź 2026, Czytanie: około 2 minut")
         println("SEMANTICS_READING="+compose.onRoot().printToString())
     }
 
