@@ -32,7 +32,10 @@ data class WpPostSummary(
     val date: String,
     val title: WpRenderedText,
     val excerpt: WpRenderedText? = null,
-    val link: String
+    val link: String,
+    // Surowe opcjonalne JSON: wadliwe metadane nie unieważniają wpisu.
+    val tyflocentrum: kotlinx.serialization.json.JsonElement? = null,
+    @SerialName("modified_gmt") val modifiedGmt: kotlinx.serialization.json.JsonElement? = null
 ) {
     @Transient
     private var formattedDateCache: String? = null

@@ -857,16 +857,18 @@ fun ContentListItem(
     onListen: (() -> Unit)? = null,
     onCopyLink: (() -> Unit)? = null,
     favoriteLabel: String? = null,
-    onToggleFavorite: (() -> Unit)? = null
+    onToggleFavorite: (() -> Unit)? = null,
+    contentTime: net.tyflopodcast.tyflocentrum.core.model.TimeLabel? = null
 ) {
     val accessibilityTitle = remember(title, kind, contentKindLabelPosition) {
         kind?.accessibilityTitle(title, contentKindLabelPosition) ?: title
     }
-    val accessibilityDescription = remember(accessibilityTitle, supportingText, date) {
+    val accessibilityDescription = remember(accessibilityTitle, supportingText, date, contentTime) {
         listOfNotNull(
             accessibilityTitle,
             supportingText?.takeIf { it.isNotBlank() },
-            date.takeIf { it.isNotBlank() }
+            date.takeIf { it.isNotBlank() },
+            contentTime?.accessible
         ).joinToString(", ")
     }
     val customActions = remember(onListen, onCopyLink, favoriteLabel, onToggleFavorite) {
@@ -937,9 +939,9 @@ fun ContentListItem(
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold
                 )
-                if (date.isNotBlank()) {
+                if (date.isNotBlank() || contentTime != null) {
                     Text(
-                        text = date,
+                        text = listOfNotNull(date.takeIf { it.isNotBlank() }, contentTime?.visible).joinToString(" · "),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )

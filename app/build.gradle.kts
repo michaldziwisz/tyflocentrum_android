@@ -25,7 +25,7 @@ android {
         versionCode = 10
         versionName = "1.0.9"
 
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        testInstrumentationRunner = "net.tyflopodcast.tyflocentrum.ui.common.ContentTimeTestRunner"
         vectorDrawables {
             useSupportLibrary = true
         }
@@ -87,6 +87,15 @@ android {
     }
 }
 
+// Testy JVM potrzebują wariantu JVM OkHttp, nie AAR odwołującego się do android.util.Log.
+// Nie wyciszamy wszystkich niezamockowanych wywołań Androida przez returnDefaultValues.
+configurations.matching { it.name.contains("UnitTest") }.configureEach {
+    resolutionStrategy.dependencySubstitution {
+        substitute(module("com.squareup.okhttp3:okhttp"))
+            .using(module("com.squareup.okhttp3:okhttp-jvm:5.3.0"))
+    }
+}
+
 dependencies {
     val composeBom = platform("androidx.compose:compose-bom:2026.03.00")
     val okhttpBom = platform("com.squareup.okhttp3:okhttp-bom:5.3.0")
@@ -125,6 +134,10 @@ dependencies {
     implementation("com.google.android.gms:play-services-cast-framework:22.3.1")
 
     implementation("org.jsoup:jsoup:1.22.1")
+
+    androidTestImplementation("androidx.test:runner:1.7.0")
+    androidTestImplementation("androidx.test.ext:junit:1.3.0")
+    androidTestImplementation("androidx.compose.ui:ui-test-junit4")
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")

@@ -40,8 +40,34 @@ jobs:
       - name: Make Gradle wrapper executable
         run: chmod +x gradlew
 
-      - name: Build debug APK and run lint
-        run: ./gradlew --no-daemon assembleDebug lintDebug
+      - name: Test, compile, build debug APK and run lint
+        run: ./gradlew --no-daemon testDebugUnitTest compileDebugKotlin assembleDebug lintDebug assembleDebugAndroidTest
+
+      - name: Enable KVM for Compose semantics tests
+        run: sudo chmod 666 /dev/kvm
+
+      - name: Measure Compose semantics on emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          script: |
+            ./gradlew --no-daemon connectedDebugAndroidTest
+            adb logcat -d -s System.out:I > app/build/content-time-semantics-logcat.txt
+
+      - name: Upload test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tyflocentrum-android-tests
+          path: |
+            app/build/test-results/testDebugUnitTest/*.xml
+            app/build/outputs/androidTest-results/connected/**/*.xml
+            app/build/reports/lint-results-debug.xml
+            app/build/content-time-semantics-logcat.txt
+          if-no-files-found: error
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4

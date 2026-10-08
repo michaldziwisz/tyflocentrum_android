@@ -59,11 +59,16 @@ class AppContainer(
         json = json
     )
 
+    val contentTimes = net.tyflopodcast.tyflocentrum.core.network.ContentTimeStore(
+        net.tyflopodcast.tyflocentrum.core.network.RetrofitTimeTransport.create(httpClient, json)
+    )
+
     val repository = TyfloRepository(
         podcastApi = podcastApi,
         articleApi = articleApi,
         contactApi = contactApi,
-        httpClient = httpClient
+        httpClient = httpClient,
+        contentTimes = contentTimes
     )
 
     val castDiagnostics = CastDiagnosticsLogger()

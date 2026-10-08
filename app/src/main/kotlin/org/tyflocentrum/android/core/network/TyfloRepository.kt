@@ -51,7 +51,7 @@ import retrofit2.http.Path
 import retrofit2.http.Query
 
 private const val POST_FIELDS = "id,date,title,excerpt,content,guid"
-private const val SUMMARY_FIELDS = "id,date,link,title,excerpt"
+private const val SUMMARY_FIELDS = "id,date,link,title,excerpt,modified_gmt,tyflocentrum"
 private const val CATEGORY_FIELDS = "id,name,count"
 private const val DETAIL_OPERATION_TIMEOUT_MS = 30_000L
 private const val DETAIL_ATTEMPT_TIMEOUT_MS = 12_000L
@@ -229,7 +229,8 @@ class TyfloRepository(
     private val podcastApi: WpApiService,
     private val articleApi: WpApiService,
     private val contactApi: ContactApiService,
-    private val httpClient: OkHttpClient
+    private val httpClient: OkHttpClient,
+    private val contentTimes: ContentTimeStore? = null
 ) {
     private val noRedirectHttpClient = httpClient.newBuilder()
         .followRedirects(false)
@@ -313,12 +314,13 @@ class TyfloRepository(
         categoryId: Int? = null,
         pomijCache: Boolean = false
     ): PagedResult<WpPostSummary> {
+        if (pomijCache) contentTimes?.invalidate(TimeSource.PODCAST)
         return podcastApi.getPostSummaries(
             perPage = perPage,
             page = page,
             categoryId = categoryId,
             cacheControl = if (pomijCache) "no-cache" else null
-        ).toPagedResult()
+        ).toPagedResult().also { contentTimes?.acceptPodcasts(it.items) }
     }
 
     suspend fun fetchArticleSummariesPage(
@@ -327,20 +329,21 @@ class TyfloRepository(
         categoryId: Int? = null,
         pomijCache: Boolean = false
     ): PagedResult<WpPostSummary> {
+        if (pomijCache) contentTimes?.invalidate(TimeSource.ARTICLE_POST)
         return articleApi.getPostSummaries(
             perPage = perPage,
             page = page,
             categoryId = categoryId,
             cacheControl = if (pomijCache) "no-cache" else null
-        ).toPagedResult()
+        ).toPagedResult().also { contentTimes?.observeArticles(TimeSource.ARTICLE_POST, it.items) }
     }
 
     suspend fun fetchPodcastSearchSummaries(query: String): List<WpPostSummary> {
-        return podcastApi.getPostSummaries(perPage = 100, page = 1, search = query.trim()).bodyOrThrow()
+        return podcastApi.getPostSummaries(perPage = 100, page = 1, search = query.trim()).bodyOrThrow().also { contentTimes?.acceptPodcasts(it) }
     }
 
     suspend fun fetchArticleSearchSummaries(query: String): List<WpPostSummary> {
-        return articleApi.getPostSummaries(perPage = 100, page = 1, search = query.trim()).bodyOrThrow()
+        return articleApi.getPostSummaries(perPage = 100, page = 1, search = query.trim()).bodyOrThrow().also { contentTimes?.observeArticles(TimeSource.ARTICLE_POST, it) }
     }
 
     suspend fun fetchPodcastDetail(id: Int, refresh: Boolean = false): WpPostDetail {
@@ -438,6 +441,7 @@ class TyfloRepository(
         val key = parentPageId to perPage
         tyfloswiatPageSummariesCache[key]?.let { return it }
         return articleApi.getPageSummaries(perPage = perPage, parentId = parentPageId).also {
+            contentTimes?.observeArticles(TimeSource.ARTICLE_PAGE, it)
             tyfloswiatPageSummariesCache[key] = it
         }
     }
