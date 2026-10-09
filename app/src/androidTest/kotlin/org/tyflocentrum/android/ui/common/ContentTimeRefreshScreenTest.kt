@@ -89,9 +89,11 @@ class ContentTimeRefreshScreenTest {
         visit(InstrumentationRegistry.getInstrumentation().uiAutomation.rootInActiveWindow)
         return found
     }
+    private lateinit var apparatus: RefreshAccessibilityHarness
     private fun clickRefresh() {
         compose.waitUntil(5_000) { ax("Odśwież")?.isEnabled == true }
-        assertTrue(requireNotNull(ax("Odśwież")).performAction(AccessibilityNodeInfo.ACTION_CLICK))
+        compose.onNode(hasContentDescription("Odśwież") and isEnabled()).assertHasClickAction()
+        apparatus.click("Odśwież")
     }
     private fun row(title: String) = compose.onNode(hasContentDescription(title, substring = true) and hasClickAction())
     private fun waitLabel(title: String, label: String) {
@@ -103,6 +105,11 @@ class ContentTimeRefreshScreenTest {
     }
 
     private fun scenario(surface: String, resume: Boolean = false) {
+        apparatus = RefreshAccessibilityHarness(compose, "$surface-${if (resume) "resume" else "manual"}")
+        apparatus.withTouchExploration { measuredScenario(surface, resume) }
+    }
+
+    private fun measuredScenario(surface: String, resume: Boolean) {
         val store = ContentTimeStore(RetrofitTimeTransport.create(client,json),clock={now.get()})
         val repository = TyfloRepository(retrofit("https://tyflopodcast.net/wp-json/").create(),
             retrofit("https://tyfloswiat.pl/wp-json/").create(),retrofit("https://kontakt.tyflopodcast.net/").create(),client,store)
@@ -158,10 +165,12 @@ class ContentTimeRefreshScreenTest {
         }
         try {
             titles.forEach { waitLabel(it,"Czas niedostępny") }
-            compose.waitUntil(10_000) { compose.onAllNodes(hasContentDescription("Odśwież") and isEnabled()).fetchSemanticsNodes().size == 1 }
+            compose.waitUntil(10_000) { compose.onAllNodes(hasContentDescription("Odśwież") and isEnabled() and hasClickAction()).fetchSemanticsNodes().size == 1 }
             // Każdy wiersz i ekran pozostają zamontowane przez cały scenariusz.
             val identities=titles.associateWith { row(it).fetchSemanticsNode().id }
+            apparatus.dump("initial")
             val androidNodes=titles.associateWith { requireNotNull(ax(it)) }
+            val androidActions=titles.associateWith { requireNotNull(ax(it)).actionList.map { a -> a.id }.filter { a -> a != AccessibilityNodeInfo.ACTION_ACCESSIBILITY_FOCUS && a != AccessibilityNodeInfo.ACTION_CLEAR_ACCESSIBILITY_FOCUS } }
             val actions=titles.associateWith { row(it).fetchSemanticsNode().config.getOrNull(SemanticsActions.CustomActions).orEmpty().map { a -> a.label } }
             val original=repository.peekNewsScreenCache()?.items
             val bounds=titles.associateWith { row(it).fetchSemanticsNode().boundsInRoot }
@@ -171,7 +180,7 @@ class ContentTimeRefreshScreenTest {
                 if(event.eventType==android.view.accessibility.AccessibilityEvent.TYPE_ANNOUNCEMENT) announcements+=event.text.toString()
             }
             if(!resume) {
-                assertTrue(requireNotNull(ax(titles.first())).performAction(AccessibilityNodeInfo.ACTION_ACCESSIBILITY_FOCUS))
+                apparatus.focus(titles.first(), substring = true)
                 compose.waitUntil(5_000) { ax(titles.first())?.isAccessibilityFocused == true }
             }
             val calls=ledger.size
@@ -186,12 +195,13 @@ class ContentTimeRefreshScreenTest {
                 mode.set(phase)
                 // Udowodnij, że serwer nie zmienił wiersza przed akcją.
                 if(phase==1) titles.forEach { waitLabel(it,"Czas niedostępny") }
+                apparatus.dump("phase-$phase-before-refresh")
                 if(resume) {
                     now.addAndGet(120_001)
                     compose.activityRule.scenario.moveToState(Lifecycle.State.CREATED)
                     compose.activityRule.scenario.moveToState(Lifecycle.State.RESUMED)
                 } else clickRefresh()
-                compose.waitUntil(10_000) { ledger.size > previousCalls && compose.onAllNodes(hasContentDescription("Odśwież") and isEnabled()).fetchSemanticsNodes().size == 1 }
+                compose.waitUntil(10_000) { ledger.size > previousCalls && compose.onAllNodes(hasContentDescription("Odśwież") and isEnabled() and hasClickAction()).fetchSemanticsNodes().size == 1 }
                 titles.forEach { title ->
                     val label=if(phase>=3) "Czas niedostępny" else if(title=="Stały podcast")
                         if(phase==1) "Czas trwania: 1 minuta 1 sekunda" else "Czas trwania: 2 minuty 2 sekundy"
@@ -201,6 +211,9 @@ class ContentTimeRefreshScreenTest {
                     assertEquals(identities[title],node.id)
                     assertEquals(actions[title],node.config.getOrNull(SemanticsActions.CustomActions).orEmpty().map { it.label })
                     val android=requireNotNull(ax(title))
+                    assertTrue(android.isClickable)
+                    assertTrue(android.isEnabled)
+                    assertEquals(androidActions[title],android.actionList.map { it.id }.filter { it != AccessibilityNodeInfo.ACTION_ACCESSIBILITY_FOCUS && it != AccessibilityNodeInfo.ACTION_CLEAR_ACCESSIBILITY_FOCUS })
                     // Window ID może zostać nadany ponownie przez Android po ON_STOP.
                     // Compose ID ma pozostać ten sam także po powrocie z tła.
                     if(!resume) assertEquals("Tożsamość Android AX",androidNodes[title],android)
@@ -213,18 +226,32 @@ class ContentTimeRefreshScreenTest {
                     compose.onAllNodes(hasText(visible,substring=true),useUnmergedTree=true).assertCountEquals(if(phase>=3) titles.size else if(title=="Stały podcast") 1 else titles.count { it!="Stały podcast" })
                     println("REFRESH_AX surface=$surface resume=$resume phase=$phase pid=$pid store=${System.identityHashCode(store)} repo=${System.identityHashCode(repository)} activity=${System.identityHashCode(compose.activity)} node=${node.id} name=${android.contentDescription}")
                 }
+                apparatus.dump("phase-$phase-after-refresh")
+                apparatus.write("phase-$phase-store", store.state.value.toString())
                 assertEquals(pid,Process.myPid())
                 if(!resume) assertTrue(requireNotNull(ax(titles.first())).isAccessibilityFocused)
                 assertTrue("Zmiana czasu nie ogłasza nowych wpisów: $announcements",announcements.isEmpty())
                 if(original!=null) assertEquals(original,repository.peekNewsScreenCache()?.items)
             }
             val stable=titles.associateWith { ax(it)?.contentDescription.toString() }
+            val beforeNoChange = ledger.size
+            apparatus.dump("no-change-before-refresh")
             clickRefresh()
-            compose.waitUntil(10_000) { compose.onAllNodes(hasContentDescription("Odśwież") and isEnabled()).fetchSemanticsNodes().size == 1 }
+            compose.waitUntil(10_000) { ledger.size > beforeNoChange && compose.onAllNodes(hasContentDescription("Odśwież") and isEnabled() and hasClickAction()).fetchSemanticsNodes().size == 1 }
             compose.waitForIdle()
+            apparatus.dump("no-change-after-refresh")
             assertEquals(stable,titles.associateWith { ax(it)?.contentDescription.toString() })
+            titles.forEach { title ->
+                assertEquals(identities[title],row(title).fetchSemanticsNode().id)
+                assertEquals(actions[title],row(title).fetchSemanticsNode().config.getOrNull(SemanticsActions.CustomActions).orEmpty().map { it.label })
+            }
+            assertTrue(announcements.isEmpty())
+            if (!resume) assertTrue(requireNotNull(ax(titles.first())).isAccessibilityFocused)
+            println("REFRESH_PASS surface=$surface resume=$resume pid=$pid phases=4 noChange=true calls=${ledger.size}")
         } finally {
             InstrumentationRegistry.getInstrumentation().uiAutomation.setOnAccessibilityEventListener(null)
+            apparatus.dump("finally")
+            apparatus.write("ledger", ledger.joinToString("\n"))
             println("REFRESH_LEDGER $surface resume=$resume\n"+ledger.joinToString("\n"))
             // Odtwarzacz oraz DataStore są singletonami całego procesu testowego.
             // Każdy test ma te same dawne ulubione bez przełączania filtra w trakcie.

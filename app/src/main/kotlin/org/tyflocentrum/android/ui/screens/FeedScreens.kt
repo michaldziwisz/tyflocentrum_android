@@ -13,11 +13,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.outlined.Article
 import androidx.compose.material.icons.outlined.LibraryMusic
 import androidx.compose.material.icons.outlined.MenuBook
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -68,6 +66,7 @@ import net.tyflopodcast.tyflocentrum.ui.common.AppScreenScaffold
 import net.tyflopodcast.tyflocentrum.ui.common.ContentListItem
 import net.tyflopodcast.tyflocentrum.ui.common.rememberContentTimeLabels
 import net.tyflopodcast.tyflocentrum.ui.common.ContentTimeRefreshButton
+import net.tyflopodcast.tyflocentrum.ui.common.ContentRefreshButton
 import net.tyflopodcast.tyflocentrum.core.network.timeRequest
 import net.tyflopodcast.tyflocentrum.ui.common.semanticButton
 import net.tyflopodcast.tyflocentrum.ui.common.FilterChipRow
@@ -331,15 +330,8 @@ fun NewsScreen(
             // ani przycisku, wiec po nieudanym zimnym starcie nie bylo jak ponowic.
             // Przycisk jest wazniejszy niz gest pociagniecia, bo gest bywa dla czytnika
             // ekranu trudny do wykonania, a przycisk znajduje sie zwyklym przegladaniem.
-            IconButton(
-                onClick = { odswiezPoPowrocie(PowodOdswiezenia.ZADANIE_UZYTKOWNIKA) },
-                enabled = !isLoading,
-                modifier = Modifier.semanticButton("Odśwież")
-            ) {
-                androidx.compose.material3.Icon(
-                    imageVector = Icons.Filled.Refresh,
-                    contentDescription = "Odśwież"
-                )
+            ContentRefreshButton(enabled = !isLoading) {
+                odswiezPoPowrocie(PowodOdswiezenia.ZADANIE_UZYTKOWNIKA)
             }
         }
     ) { padding ->

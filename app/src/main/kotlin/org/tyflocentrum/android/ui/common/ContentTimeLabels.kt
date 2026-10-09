@@ -6,6 +6,8 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -28,7 +30,16 @@ class ContentTimeLabels(
 /** Wspólna dostępna akcja na listach bez odświeżania całej zawartości. */
 @Composable
 fun ContentTimeRefreshButton(times: ContentTimeLabels) {
-    IconButton(onClick = times.refresh, enabled = !times.refreshing, modifier = Modifier.semanticButton("Odśwież")) {
+    ContentRefreshButton(enabled = !times.refreshing, onRefresh = times.refresh)
+}
+
+/** Nazwa na węźle przycisku, bez semantycznego dziecka ikony.
+ * clearAndSetSemantics przed clickable Material3 usuwa również jego OnClick.
+ * Nie kasujemy semantyki przycisku ani nie dublujemy jego akcji dla disabled. */
+@Composable
+fun ContentRefreshButton(enabled: Boolean, onRefresh: () -> Unit) {
+    IconButton(onClick = onRefresh, enabled = enabled,
+        modifier = Modifier.semantics { contentDescription = "Odśwież" }) {
         Icon(Icons.Filled.Refresh, contentDescription = null)
     }
 }

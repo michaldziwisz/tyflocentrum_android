@@ -56,7 +56,7 @@ jobs:
           target: google_apis
           disable-animations: true
           script: |
-            ./gradlew --no-daemon connectedDebugAndroidTest; result=$?; adb logcat -d -s System.out:I > app/build/content-time-semantics-logcat.txt; exit $result
+            bash tools/verify-refresh-emulator.sh
 
       - name: Upload test evidence
         if: always()
@@ -68,6 +68,7 @@ jobs:
             app/build/outputs/androidTest-results/connected/**/*.xml
             app/build/reports/lint-results-debug.xml
             app/build/content-time-semantics-logcat.txt
+            app/build/refresh-evidence/
           if-no-files-found: error
 
       - name: Preserve build verdict
