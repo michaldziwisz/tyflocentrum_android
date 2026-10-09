@@ -41,7 +41,9 @@ jobs:
         run: chmod +x gradlew
 
       - name: Test, compile, build debug APK and run lint
-        run: ./gradlew --no-daemon testDebugUnitTest compileDebugKotlin assembleDebug lintDebug assembleDebugAndroidTest
+        id: build
+        continue-on-error: true
+        run: ./gradlew --no-daemon --continue testDebugUnitTest compileDebugKotlin assembleDebug lintDebug assembleDebugAndroidTest
 
       - name: Enable KVM for Compose semantics tests
         run: sudo chmod 666 /dev/kvm
@@ -54,8 +56,7 @@ jobs:
           target: google_apis
           disable-animations: true
           script: |
-            ./gradlew --no-daemon connectedDebugAndroidTest
-            adb logcat -d -s System.out:I > app/build/content-time-semantics-logcat.txt
+            ./gradlew --no-daemon connectedDebugAndroidTest; result=$?; adb logcat -d -s System.out:I > app/build/content-time-semantics-logcat.txt; exit $result
 
       - name: Upload test evidence
         if: always()
@@ -68,6 +69,10 @@ jobs:
             app/build/reports/lint-results-debug.xml
             app/build/content-time-semantics-logcat.txt
           if-no-files-found: error
+
+      - name: Preserve build verdict
+        if: always() && steps.build.outcome == 'failure'
+        run: exit 1
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
