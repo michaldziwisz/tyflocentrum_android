@@ -11,6 +11,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.getOrNull
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.lifecycle.Lifecycle
@@ -21,6 +23,7 @@ import java.util.Collections
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.flow.first
 import kotlinx.serialization.json.Json
 import net.tyflopodcast.tyflocentrum.core.AppContainer
 import net.tyflopodcast.tyflocentrum.core.model.*
@@ -40,6 +43,12 @@ import retrofit2.create
 /** Prawdziwe ekrany, repo i eksport Android AX. Serwer zmienia się wyłącznie
  * w jawnej fazie testu, nigdy po osiągnięciu liczby żądań. Brak sieci produkcyjnej. */
 class ContentTimeRefreshScreenTest {
+    companion object {
+        private var sharedContainer: AppContainer? = null
+        @JvmStatic @org.junit.AfterClass fun releasePlayer() {
+            InstrumentationRegistry.getInstrumentation().runOnMainSync { sharedContainer?.playerController?.release() }
+        }
+    }
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
     private val mode = AtomicInteger(0)
     private val now = AtomicLong(System.currentTimeMillis())
@@ -80,6 +89,10 @@ class ContentTimeRefreshScreenTest {
         visit(InstrumentationRegistry.getInstrumentation().uiAutomation.rootInActiveWindow)
         return found
     }
+    private fun clickRefresh() {
+        compose.waitUntil(5_000) { ax("Odśwież")?.isEnabled == true }
+        assertTrue(requireNotNull(ax("Odśwież")).performAction(AccessibilityNodeInfo.ACTION_CLICK))
+    }
     private fun row(title: String) = compose.onNode(hasContentDescription(title, substring = true) and hasClickAction())
     private fun waitLabel(title: String, label: String) {
         compose.waitUntil(10_000) {
@@ -95,13 +108,14 @@ class ContentTimeRefreshScreenTest {
             retrofit("https://tyfloswiat.pl/wp-json/").create(),retrofit("https://kontakt.tyflopodcast.net/").create(),client,store)
         lateinit var container: AppContainer
         compose.runOnUiThread {
-            container = AppContainer(compose.activity.application as Application)
+            container = sharedContainer ?: AppContainer(compose.activity.application as Application).also { sharedContainer=it }
             // Tylko podmiana zależności w testach. Produkcyjny AppContainer bez zmian.
             for ((field,value) in listOf("repository" to repository, "contentTimes" to store)) {
                 AppContainer::class.java.getDeclaredField(field).apply { isAccessible=true }.set(container,value)
             }
         }
         if (surface == "favorites") runBlocking {
+            container.preferencesRepository.favoritesFlow.first().forEach { container.preferencesRepository.removeFavorite(it) }
             // Zapis starych ulubionych bez metadanych, przed pierwszym ekranem.
             container.preferencesRepository.toggleFavorite(FavoriteItem.PodcastFavorite(json.decodeFromString(summary(true,false,0))))
             container.preferencesRepository.toggleFavorite(FavoriteItem.ArticleFavorite(json.decodeFromString(summary(false,false,0)),FavoriteArticleOrigin.POST))
@@ -133,7 +147,7 @@ class ContentTimeRefreshScreenTest {
                 }
                 fill(compose.activity.window.decorView)
             }
-            compose.onNodeWithContentDescription("Szukaj").performClick()
+            compose.onNode(hasContentDescription("Szukaj") and SemanticsMatcher.expectValue(SemanticsProperties.Role,Role.Button)).performClick()
         }
         val titles=when(surface) {
             "news","search" -> listOf("Stały podcast","Stały artykuł")
@@ -144,11 +158,22 @@ class ContentTimeRefreshScreenTest {
         }
         try {
             titles.forEach { waitLabel(it,"Czas niedostępny") }
+            compose.waitUntil(10_000) { compose.onAllNodes(hasContentDescription("Odśwież") and isEnabled()).fetchSemanticsNodes().size == 1 }
             // Każdy wiersz i ekran pozostają zamontowane przez cały scenariusz.
             val identities=titles.associateWith { row(it).fetchSemanticsNode().id }
             val androidNodes=titles.associateWith { requireNotNull(ax(it)) }
             val actions=titles.associateWith { row(it).fetchSemanticsNode().config.getOrNull(SemanticsActions.CustomActions).orEmpty().map { a -> a.label } }
             val original=repository.peekNewsScreenCache()?.items
+            val bounds=titles.associateWith { row(it).fetchSemanticsNode().boundsInRoot }
+            val announcements=Collections.synchronizedList(mutableListOf<String>())
+            val automation=InstrumentationRegistry.getInstrumentation().uiAutomation
+            automation.setOnAccessibilityEventListener { event ->
+                if(event.eventType==android.view.accessibility.AccessibilityEvent.TYPE_ANNOUNCEMENT) announcements+=event.text.toString()
+            }
+            if(!resume) {
+                assertTrue(requireNotNull(ax(titles.first())).performAction(AccessibilityNodeInfo.ACTION_ACCESSIBILITY_FOCUS))
+                compose.waitUntil(5_000) { ax(titles.first())?.isAccessibilityFocused == true }
+            }
             val calls=ledger.size
             if(resume) {
                 compose.activityRule.scenario.moveToState(Lifecycle.State.CREATED)
@@ -157,6 +182,7 @@ class ContentTimeRefreshScreenTest {
                 assertEquals("Powrót przed progiem",calls,ledger.size)
             }
             for(phase in 1..4) {
+                val previousCalls=ledger.size
                 mode.set(phase)
                 // Udowodnij, że serwer nie zmienił wiersza przed akcją.
                 if(phase==1) titles.forEach { waitLabel(it,"Czas niedostępny") }
@@ -164,7 +190,8 @@ class ContentTimeRefreshScreenTest {
                     now.addAndGet(120_001)
                     compose.activityRule.scenario.moveToState(Lifecycle.State.CREATED)
                     compose.activityRule.scenario.moveToState(Lifecycle.State.RESUMED)
-                } else compose.onNodeWithContentDescription("Odśwież").performClick()
+                } else clickRefresh()
+                compose.waitUntil(10_000) { ledger.size > previousCalls && compose.onAllNodes(hasContentDescription("Odśwież") and isEnabled()).fetchSemanticsNodes().size == 1 }
                 titles.forEach { title ->
                     val label=if(phase>=3) "Czas niedostępny" else if(title=="Stały podcast")
                         if(phase==1) "Czas trwania: 1 minuta 1 sekunda" else "Czas trwania: 2 minuty 2 sekundy"
@@ -174,7 +201,10 @@ class ContentTimeRefreshScreenTest {
                     assertEquals(identities[title],node.id)
                     assertEquals(actions[title],node.config.getOrNull(SemanticsActions.CustomActions).orEmpty().map { it.label })
                     val android=requireNotNull(ax(title))
-                    assertEquals("Tożsamość Android AX",androidNodes[title],android)
+                    // Window ID może zostać nadany ponownie przez Android po ON_STOP.
+                    // Compose ID ma pozostać ten sam także po powrocie z tła.
+                    if(!resume) assertEquals("Tożsamość Android AX",androidNodes[title],android)
+                    if(title==titles.first()) assertEquals(bounds[title]!!.topLeft,node.boundsInRoot.topLeft)
                     assertEquals(1,android.contentDescription.toString().split(label).size-1)
                     assertEquals(0,android.childCount)
                     val visible=if(phase>=3) label else if(title=="Stały podcast")
@@ -184,15 +214,19 @@ class ContentTimeRefreshScreenTest {
                     println("REFRESH_AX surface=$surface resume=$resume phase=$phase pid=$pid store=${System.identityHashCode(store)} repo=${System.identityHashCode(repository)} activity=${System.identityHashCode(compose.activity)} node=${node.id} name=${android.contentDescription}")
                 }
                 assertEquals(pid,Process.myPid())
+                if(!resume) assertTrue(requireNotNull(ax(titles.first())).isAccessibilityFocused)
+                assertTrue("Zmiana czasu nie ogłasza nowych wpisów: $announcements",announcements.isEmpty())
                 if(original!=null) assertEquals(original,repository.peekNewsScreenCache()?.items)
             }
             val stable=titles.associateWith { ax(it)?.contentDescription.toString() }
-            compose.onNodeWithContentDescription("Odśwież").performClick()
+            clickRefresh()
+            compose.waitUntil(10_000) { compose.onAllNodes(hasContentDescription("Odśwież") and isEnabled()).fetchSemanticsNodes().size == 1 }
             compose.waitForIdle()
             assertEquals(stable,titles.associateWith { ax(it)?.contentDescription.toString() })
         } finally {
+            InstrumentationRegistry.getInstrumentation().uiAutomation.setOnAccessibilityEventListener(null)
             println("REFRESH_LEDGER $surface resume=$resume\n"+ledger.joinToString("\n"))
-            compose.runOnUiThread { container.playerController.release() }
+            // Odtwarzacz oraz DataStore są singletonami całego procesu testowego.
             // Każdy test ma te same dawne ulubione bez przełączania filtra w trakcie.
             if(surface=="favorites") runBlocking {
                 container.preferencesRepository.toggleFavorite(FavoriteItem.PodcastFavorite(json.decodeFromString(summary(true,false,0))))
@@ -211,4 +245,10 @@ class ContentTimeRefreshScreenTest {
     @Test fun issuePagesManual() = scenario("issue")
     @Test fun oldFavoritesResume() = scenario("favorites",true)
     @Test fun articleCategoryResume() = scenario("article-category",true)
+    @Test fun allArticlesResume() = scenario("articles",true)
+    @Test fun podcastCategoryResume() = scenario("podcast-category",true)
+    @Test fun allPodcastsResume() = scenario("podcasts",true)
+    @Test fun issuePagesResume() = scenario("issue",true)
+    @Test fun searchResume() = scenario("search",true)
+    @Test fun newsResume() = scenario("news",true)
 }

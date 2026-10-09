@@ -116,6 +116,7 @@ import net.tyflopodcast.tyflocentrum.ui.common.AppScreenScaffold
 import net.tyflopodcast.tyflocentrum.ui.common.CastRouteButton
 import net.tyflopodcast.tyflocentrum.ui.common.ContentListItem
 import net.tyflopodcast.tyflocentrum.ui.common.rememberContentTimeLabels
+import net.tyflopodcast.tyflocentrum.ui.common.ContentTimeRefreshButton
 import net.tyflopodcast.tyflocentrum.core.network.timeRequest
 import net.tyflopodcast.tyflocentrum.ui.common.FullScreenScrollable
 import net.tyflopodcast.tyflocentrum.ui.common.LabeledTextField
@@ -827,7 +828,8 @@ fun MagazineIssueScreen(
 
     AppScreenScaffold(
         navController = navController,
-        title = issue?.title?.plainText ?: "Numer czasopisma"
+        title = issue?.title?.plainText ?: "Numer czasopisma",
+        actions = { ContentTimeRefreshButton(times) }
     ) { padding ->
         if (isLoading && issue == null) {
             DetailStatePane(padding, "Ładowanie numeru czasopisma…", true)

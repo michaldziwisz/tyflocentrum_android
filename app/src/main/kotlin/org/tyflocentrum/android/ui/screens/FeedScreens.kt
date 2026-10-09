@@ -67,6 +67,7 @@ import net.tyflopodcast.tyflocentrum.ui.common.Announcement
 import net.tyflopodcast.tyflocentrum.ui.common.AppScreenScaffold
 import net.tyflopodcast.tyflocentrum.ui.common.ContentListItem
 import net.tyflopodcast.tyflocentrum.ui.common.rememberContentTimeLabels
+import net.tyflopodcast.tyflocentrum.ui.common.ContentTimeRefreshButton
 import net.tyflopodcast.tyflocentrum.core.network.timeRequest
 import net.tyflopodcast.tyflocentrum.ui.common.semanticButton
 import net.tyflopodcast.tyflocentrum.ui.common.FilterChipRow
@@ -714,7 +715,8 @@ fun PodcastListScreen(
 
     AppScreenScaffold(
         navController = navController,
-        title = title
+        title = title,
+        actions = { ContentTimeRefreshButton(times) }
     ) { padding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
@@ -840,7 +842,8 @@ fun ArticleListScreen(
     AppScreenScaffold(
         navController = navController,
         title = title,
-        snackbarHostState = snackbarHostState
+        snackbarHostState = snackbarHostState,
+        actions = { ContentTimeRefreshButton(times) }
     ) { padding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
@@ -954,7 +957,8 @@ fun SearchScreen(
         navController = navController,
         title = "Szukaj",
         rootDestination = rootDestination,
-        snackbarHostState = snackbarHostState
+        snackbarHostState = snackbarHostState,
+        actions = { ContentTimeRefreshButton(times) }
     ) { padding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize(),

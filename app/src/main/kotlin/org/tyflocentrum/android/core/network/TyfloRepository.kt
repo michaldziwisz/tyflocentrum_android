@@ -314,13 +314,13 @@ class TyfloRepository(
         categoryId: Int? = null,
         pomijCache: Boolean = false
     ): PagedResult<WpPostSummary> {
-        if (pomijCache) contentTimes?.invalidate(TimeSource.PODCAST)
+        val generation = contentTimes?.beginList(TimeSource.PODCAST, pomijCache)
         return podcastApi.getPostSummaries(
             perPage = perPage,
             page = page,
             categoryId = categoryId,
             cacheControl = if (pomijCache) "no-cache" else null
-        ).toPagedResult().also { contentTimes?.acceptPodcasts(it.items) }
+        ).toPagedResult().also { contentTimes?.finishList(TimeSource.PODCAST, generation, it.items) }
     }
 
     suspend fun fetchArticleSummariesPage(
@@ -329,21 +329,27 @@ class TyfloRepository(
         categoryId: Int? = null,
         pomijCache: Boolean = false
     ): PagedResult<WpPostSummary> {
-        if (pomijCache) contentTimes?.invalidate(TimeSource.ARTICLE_POST)
+        val generation = contentTimes?.beginList(TimeSource.ARTICLE_POST, pomijCache)
         return articleApi.getPostSummaries(
             perPage = perPage,
             page = page,
             categoryId = categoryId,
             cacheControl = if (pomijCache) "no-cache" else null
-        ).toPagedResult().also { contentTimes?.observeArticles(TimeSource.ARTICLE_POST, it.items) }
+        ).toPagedResult().also { contentTimes?.finishList(TimeSource.ARTICLE_POST, generation, it.items) }
     }
 
     suspend fun fetchPodcastSearchSummaries(query: String): List<WpPostSummary> {
-        return podcastApi.getPostSummaries(perPage = 100, page = 1, search = query.trim()).bodyOrThrow().also { contentTimes?.acceptPodcasts(it) }
+        val generation = contentTimes?.beginList(TimeSource.PODCAST, false)
+        return podcastApi.getPostSummaries(perPage = 100, page = 1, search = query.trim()).bodyOrThrow().also {
+            contentTimes?.finishList(TimeSource.PODCAST, generation, it)
+        }
     }
 
     suspend fun fetchArticleSearchSummaries(query: String): List<WpPostSummary> {
-        return articleApi.getPostSummaries(perPage = 100, page = 1, search = query.trim()).bodyOrThrow().also { contentTimes?.observeArticles(TimeSource.ARTICLE_POST, it) }
+        val generation = contentTimes?.beginList(TimeSource.ARTICLE_POST, false)
+        return articleApi.getPostSummaries(perPage = 100, page = 1, search = query.trim()).bodyOrThrow().also {
+            contentTimes?.finishList(TimeSource.ARTICLE_POST, generation, it)
+        }
     }
 
     suspend fun fetchPodcastDetail(id: Int, refresh: Boolean = false): WpPostDetail {

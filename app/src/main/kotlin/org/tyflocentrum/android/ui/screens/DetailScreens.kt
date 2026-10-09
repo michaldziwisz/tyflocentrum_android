@@ -76,6 +76,7 @@ import net.tyflopodcast.tyflocentrum.ui.common.AccessibleHtmlText
 import net.tyflopodcast.tyflocentrum.ui.common.AppScreenScaffold
 import net.tyflopodcast.tyflocentrum.ui.common.ContentListItem
 import net.tyflopodcast.tyflocentrum.ui.common.rememberContentTimeLabels
+import net.tyflopodcast.tyflocentrum.ui.common.ContentTimeRefreshButton
 import net.tyflopodcast.tyflocentrum.core.network.timeRequest
 import net.tyflopodcast.tyflocentrum.ui.common.FilterChipRow
 import net.tyflopodcast.tyflocentrum.ui.common.FullScreenScrollable
@@ -845,7 +846,8 @@ fun FavoritesScreen(
 
     AppScreenScaffold(
         navController = navController,
-        title = "Ulubione"
+        title = "Ulubione",
+        actions = { ContentTimeRefreshButton(times) }
     ) { padding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
