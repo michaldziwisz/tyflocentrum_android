@@ -47,14 +47,26 @@ internal class RefreshAccessibilityHarness(
         }
     }
 
+    private val evidenceWriter = RefreshEvidenceWriter(
+        "/data/local/tmp/tyflo-refresh",
+        readCommand = { command ->
+            ParcelFileDescriptor.AutoCloseInputStream(automation.executeShellCommand(command)).use { it.readBytes() }
+        },
+        writeCommand = { command, bytes ->
+            val descriptors = automation.executeShellCommandRw(command)
+            try {
+                ParcelFileDescriptor.AutoCloseOutputStream(descriptors[1]).use { it.write(bytes) }
+                ParcelFileDescriptor.AutoCloseInputStream(descriptors[0]).use { it.readBytes() }
+            } finally {
+                descriptors.forEach { runCatching { it.close() } }
+            }
+        },
+    )
+
     fun write(label: String, text: String) {
         require(prefix.matches(Regex("[a-zA-Z0-9_-]+")))
         require(label.matches(Regex("[a-zA-Z0-9_-]+")))
-        val path = "/data/local/tmp/tyflo-refresh/$prefix-${sequence++}-$label"
-        val descriptors = automation.executeShellCommandRw("mkdir -p /data/local/tmp/tyflo-refresh; cat > $path")
-        ParcelFileDescriptor.AutoCloseOutputStream(descriptors[1]).use { it.write(text.toByteArray(Charsets.UTF_8)) }
-        ParcelFileDescriptor.AutoCloseInputStream(descriptors[0]).use { it.readBytes() }
-        println("REFRESH_EVIDENCE $path bytes=${text.toByteArray(Charsets.UTF_8).size}")
+        println(evidenceWriter.write("$prefix-${sequence++}-$label", text))
     }
 
     fun dump(label: String, includeCompose: Boolean = true) {

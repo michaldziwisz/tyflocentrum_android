@@ -21,47 +21,95 @@ import org.junit.Test
 class RefreshAccessibilityControlTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
 
-    @Test fun nativeAndComposeControlsProveFocusAndRealClick() {
-        val harness = RefreshAccessibilityHarness(compose, "apparatus")
+    @Test fun nativeControlProvesFocusCallbackAndExportedText() {
+        val harness = RefreshAccessibilityHarness(compose, "apparatus-native")
         harness.withTouchExploration {
-            var nativeCount by mutableIntStateOf(0)
-            var composeCount by mutableIntStateOf(0)
+            var count by mutableIntStateOf(0)
+            lateinit var nativeButton: NativeButton
             compose.setContent {
                 MaterialTheme {
-                    Column {
-                        AndroidView(factory = { context ->
-                            NativeButton(context).apply {
-                                contentDescription = "Natywna kontrolka"
-                                setOnClickListener { nativeCount++ }
-                            }
-                        }, update = { it.text = "Natywny licznik: $nativeCount" })
-                        Button(onClick = { composeCount++ },
-                            modifier = Modifier.semantics { contentDescription = "Kontrolka Compose" }) {
-                            Text("Compose licznik: $composeCount")
+                    AndroidView(factory = { context ->
+                        NativeButton(context).apply {
+                            nativeButton = this
+                            contentDescription = "Natywna kontrolka"
+                            setOnClickListener { count++ }
                         }
+                    }, update = { it.text = "Natywny licznik: $count" })
+                }
+            }
+            compose.waitForIdle()
+            val name = "Natywna kontrolka"
+            fun sample(label: String): String {
+                val state = compose.runOnIdle {
+                    org.json.JSONObject().apply {
+                        put("counter", count)
+                        put("rawText", nativeButton.text.toString())
+                        put("transformation", nativeButton.transformationMethod?.javaClass?.name)
+                        put("displayedText", nativeButton.transformationMethod
+                            ?.getTransformation(nativeButton.text, nativeButton)?.toString()
+                            ?: nativeButton.text.toString())
+                    }
+                }
+                harness.write(label, state.toString(2))
+                harness.dump(label)
+                return state.getString("displayedText")
+            }
+            compose.waitUntil(5_000) { harness.named(name).size == 1 }
+            sample("native-before")
+            compose.runOnIdle { assertEquals(0, count) }
+            harness.focus(name)
+            harness.focus(name)
+            val before = harness.named(name).single()
+            harness.click(name)
+            try {
+                compose.waitUntil(5_000) { count == 1 }
+            } finally { sample("native-after-callback") }
+            compose.runOnIdle {
+                assertEquals(1, count)
+                assertEquals("Natywny licznik: 1", nativeButton.text.toString())
+            }
+            // Tekst AX odpowiada zmierzonej transformacji, nie założeniu o motywie.
+            val expected = sample("native-expected-text")
+            try {
+                compose.waitUntil(5_000) { harness.named(name).single().text?.toString() == expected }
+            } finally { sample("native-after-text") }
+            assertEquals(before, harness.named(name).single())
+            assertTrue(harness.named(name).single().isAccessibilityFocused)
+        }
+    }
+
+    @Test fun composeControlProvesFocusAndRealClick() {
+        val harness = RefreshAccessibilityHarness(compose, "apparatus-compose")
+        harness.withTouchExploration {
+            var count by mutableIntStateOf(0)
+            compose.setContent {
+                MaterialTheme {
+                    Button(onClick = { count++ },
+                        modifier = Modifier.semantics { contentDescription = "Kontrolka Compose" }) {
+                        Text("Compose licznik: $count")
                     }
                 }
             }
             compose.waitForIdle()
-            harness.dump("controls-ready")
-            for (name in listOf("Natywna kontrolka", "Kontrolka Compose")) {
-                compose.waitUntil(5_000) { harness.named(name).size == 1 }
-                harness.focus(name)
-                harness.focus(name) // Już zafokusowany węzeł: false nie oznacza utraty fokusu.
-                val before = harness.named(name).single()
-                harness.click(name)
-                if (name == "Natywna kontrolka") {
-                    compose.waitUntil(5_000) { harness.named(name).single().text?.toString() == "Natywny licznik: 1" }
-                    compose.runOnIdle { assertEquals(1, nativeCount) }
-                } else {
-                    compose.onNodeWithText("Compose licznik: 1", useUnmergedTree = true).assertIsDisplayed()
-                    compose.runOnIdle { assertEquals(1, composeCount) }
-                }
-                harness.dump("control-clicked")
-                assertEquals(before, harness.named(name).single())
-                assertTrue(harness.named(name).single().isAccessibilityFocused)
-            }
+            val name = "Kontrolka Compose"
+            compose.waitUntil(5_000) { harness.named(name).size == 1 }
+            harness.focus(name)
+            harness.focus(name)
+            val before = harness.named(name).single()
+            harness.click(name)
+            try {
+                compose.onNodeWithText("Compose licznik: 1", useUnmergedTree = true).assertIsDisplayed()
+                compose.runOnIdle { assertEquals(1, count) }
+            } finally { harness.dump("compose-after-click") }
+            assertEquals(before, harness.named(name).single())
+            assertTrue(harness.named(name).single().isAccessibilityFocused)
         }
+    }
+
+    @Test fun evidenceRoundTripPreservesLargeUtf8() {
+        val harness = RefreshAccessibilityHarness(compose, "transport-control")
+        harness.write("large-utf8", "Odśwież: zażółć gęślą jaźń.\n".repeat(12000))
+        harness.write("empty", "")
     }
 
     @Test fun legacyLosesActionAndRefreshKeepsNameActionAndDisabledState() {
