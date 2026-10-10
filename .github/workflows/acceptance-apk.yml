@@ -3,7 +3,7 @@ name: APK odbioru Androida (bez publikacji)
 on:
   push:
     branches:
-      - ci/state-acceptance-apk-20261010
+      - ci/stop-gate-apk-20261010
 
 permissions:
   contents: read

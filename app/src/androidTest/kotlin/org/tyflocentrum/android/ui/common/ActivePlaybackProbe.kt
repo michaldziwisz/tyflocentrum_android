@@ -98,12 +98,36 @@ internal class ActivePlaybackProbe(private val controller: PlayerController) {
         return clean
     }
     data class Window(val sample: Int, val event: Int)
-    fun begin(): Window { var w:Window?=null; instrumentation.runOnMainSync {
+    private fun isActive(): Boolean {
+        return local.isPlaying && local.playbackState == Player.STATE_READY &&
+            local.playbackSuppressionReason == Player.PLAYBACK_SUPPRESSION_REASON_NONE
+    }
+    private fun openWindow(): Window {
         sample()
-        assertTrue("Początek okna wymaga aktywnego odtwarzania bez supresji", local.isPlaying && local.playbackState == Player.STATE_READY && local.playbackSuppressionReason == Player.PLAYBACK_SUPPRESSION_REASON_NONE)
+        assertTrue("Początek okna wymaga aktywnego odtwarzania bez supresji", isActive())
         event("window", "sample=${samples.lastIndex}")
-        w=Window(samples.lastIndex,events.size)
+        return Window(samples.lastIndex,events.size)
+    }
+    fun begin(): Window { var w:Window?=null; instrumentation.runOnMainSync {
+        w=openWindow()
     }; return w!! }
+    private fun beginWhenActive(timeoutMs: Long = 30_000): Window {
+        require(timeoutMs > 0)
+        val startedAt = SystemClock.elapsedRealtime()
+        while (true) {
+            var window: Window? = null
+            instrumentation.runOnMainSync {
+                // Sprawdzenie i otwarcie w jednym przebiegu kolejki głównej.
+                if (SystemClock.elapsedRealtime() - startedAt < timeoutMs && isActive()) {
+                    window = openWindow()
+                }
+            }
+            window?.let { return it }
+            assertTrue("Początek okna wymaga aktywnego odtwarzania bez supresji",
+                SystemClock.elapsedRealtime() - startedAt < timeoutMs)
+            Thread.sleep(100)
+        }
+    }
     fun failures(w: Window): List<String> {
         val bad=mutableListOf<String>()
         instrumentation.runOnMainSync {
@@ -130,7 +154,7 @@ internal class ActivePlaybackProbe(private val controller: PlayerController) {
         return bad
     }
     fun negativeStop(): List<String> {
-        val w=begin()
+        val w=beginWhenActive()
         instrumentation.runOnMainSync { player.stop() }
         Thread.sleep(350)
         return failures(w)
