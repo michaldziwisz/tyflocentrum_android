@@ -5,5 +5,5 @@
     również dla czytnika ekranu - stąd inna nazwa, nie tylko inna ikona.
 -->
 <resources>
-    <string name="app_name">Tyflocentrum (test)</string>
+    <string name="app_name">TyfloCentrum (odbiór)</string>
 </resources>

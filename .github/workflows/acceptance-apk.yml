@@ -1,0 +1,77 @@
+name: APK odbioru Androida (bez publikacji)
+
+on:
+  push:
+    branches:
+      - ci/state-acceptance-apk-20261010
+
+permissions:
+  contents: read
+
+concurrency:
+  group: acceptance-apk-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Pobierz dokładny commit
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Przygotuj JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Przygotuj Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: true
+      - name: Przygotuj Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: ''
+      - name: Zainstaluj wymagane pakiety SDK
+        run: sdkmanager "platforms;android-36" "build-tools;36.0.0" "platform-tools"
+      - name: Sprawdź zamrożone źródła
+        run: |
+          sha256sum --check tools/acceptance-build-source.sha256
+          test ! -e keystore.properties
+          test ! -d keys
+          mkdir -p acceptance-evidence
+          git rev-parse HEAD > acceptance-evidence/commit.txt
+          cp tools/acceptance-build-source.sha256 acceptance-evidence/source.sha256
+      - name: Zbuduj oba APK i wykonaj testy JVM
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x gradlew
+          ./gradlew --no-daemon --max-workers=2 --console=plain --stacktrace \
+            '-Dorg.gradle.jvmargs=-Xmx3072m -XX:MaxMetaspaceSize=512m -XX:ActiveProcessorCount=2 -Dfile.encoding=UTF-8' \
+            -Pkotlin.compiler.execution.strategy=in-process \
+            testDebugUnitTest assembleDebug assembleDebugAndroidTest 2>&1 | tee acceptance-evidence/build.log
+          sha256sum --check tools/acceptance-build-source.sha256
+          sha256sum app/build/outputs/apk/debug/app-debug.apk \
+            app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk > acceptance-evidence/apk.sha256
+      - name: Zachowaj dowody również przy nieudanej budowie
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: acceptance-build-evidence
+          retention-days: 14
+          if-no-files-found: error
+          path: |
+            acceptance-evidence/
+            app/build/test-results/testDebugUnitTest/*.xml
+      - name: Zachowaj APK bez publikacji wydania
+        uses: actions/upload-artifact@v4
+        with:
+          name: acceptance-apks
+          retention-days: 14
+          if-no-files-found: error
+          path: |
+            app/build/outputs/apk/debug/app-debug.apk
+            app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk

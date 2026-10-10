@@ -863,12 +863,11 @@ fun ContentListItem(
     val accessibilityTitle = remember(title, kind, contentKindLabelPosition) {
         kind?.accessibilityTitle(title, contentKindLabelPosition) ?: title
     }
-    val accessibilityDescription = remember(accessibilityTitle, supportingText, date, contentTime) {
+    val accessibilityDescription = remember(accessibilityTitle, supportingText, date) {
         listOfNotNull(
             accessibilityTitle,
             supportingText?.takeIf { it.isNotBlank() },
-            date.takeIf { it.isNotBlank() },
-            contentTime?.accessible
+            date.takeIf { it.isNotBlank() }
         ).joinToString(", ")
     }
     val customActions = remember(onListen, onCopyLink, favoriteLabel, onToggleFavorite) {
@@ -900,6 +899,8 @@ fun ContentListItem(
             .padding(vertical = 4.dp)
             .clearAndSetSemantics {
                 contentDescription = accessibilityDescription
+                // Zmienny czas nie zmienia nazwy używanej do przywracania fokusu.
+                contentTime?.let { stateDescription = it.accessible }
                 onClick(label = "Otwórz szczegóły") {
                     onOpen()
                     true
