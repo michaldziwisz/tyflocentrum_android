@@ -205,6 +205,25 @@ class ContentTimeActiveScrollTest {
             }
             // Prawdziwa akcja przewinięcia listy, nie podmiana LazyListState w aplikacji.
             list.performScrollToNode(hasContentDescription(title,substring=true))
+            if (surface == "search") {
+                // ScrollToNode widzi obszar listy także pod paskiem nawigacji.
+                // To nadal przygotowanie próby: bez fokusu, odtwarzania i odświeżenia.
+                apparatus.dump("target-before-visible-scroll")
+                val targetNode = row(title).fetchSemanticsNode().id
+                var steps = 0
+                while (ax(title) == null && steps < 3) {
+                    list.performSemanticsAction(SemanticsActions.ScrollBy) { scrollBy ->
+                        assertTrue("Lista musi obsłużyć przewinięcie", scrollBy(0f, 120f))
+                    }
+                    compose.waitForIdle()
+                    apparatus.automation.waitForIdle(100, 5_000)
+                    steps++
+                }
+                apparatus.write("visible-scroll-steps", steps.toString())
+                apparatus.dump("target-after-visible-scroll")
+                assertNotNull("Przygotowanie nie udostępniło wiersza w AX po $steps krokach", ax(title))
+                assertEquals("Przewinięcie udostępnia ten sam wiersz", targetNode, row(title).fetchSemanticsNode().id)
+            }
             waitLabel(title,"Czas niedostępny")
             playback.start()
             compose.waitUntil(30_000) { playback.ready() }

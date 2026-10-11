@@ -1,0 +1,64 @@
+name: Scroll diagnostic
+
+on:
+  push:
+    branches:
+      - ci/scroll-repair-20261011
+
+permissions:
+  contents: read
+
+concurrency:
+  group: scroll-diagnostic-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  measure:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      # Celowana próbka, nie pełne CI i nie pomiar prawdziwego czytnika.
+      SCROLL_TEST_CLASSES: net.tyflopodcast.tyflocentrum.ui.common.ContentTimeLayoutTest,net.tyflopodcast.tyflocentrum.ui.common.RefreshAccessibilityControlTest,net.tyflopodcast.tyflocentrum.ui.common.ContentTimeActiveScrollTest#activeScrollPodcastsManual,net.tyflopodcast.tyflocentrum.ui.common.ContentTimeActiveScrollTest#activeScrollPodcastsResume,net.tyflopodcast.tyflocentrum.ui.common.ContentTimeActiveScrollTest#activeScrollSearchManual,net.tyflopodcast.tyflocentrum.ui.common.ContentTimeActiveScrollTest#activeScrollSearchResume
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: ''
+      - name: Przygotuj SDK i oba APK
+        run: |
+          sdkmanager "platforms;android-36" "build-tools;36.0.0" "platform-tools"
+          chmod +x gradlew
+          ./gradlew --no-daemon assembleDebug assembleDebugAndroidTest
+      - name: Udostępnij KVM
+        run: sudo chmod 666 /dev/kvm
+      - name: Kontrolki i celowana próba
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          script: bash tools/verify-scroll-diagnostic.sh
+      - name: Zachowaj dowody także przy porażce
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scroll-diagnostic-evidence
+          path: |
+            app/build/scroll-diagnostic/
+            app/build/outputs/androidTest-results/connected/**/*.xml
+          if-no-files-found: error
+      - name: Zachowaj skompilowane APK do odbioru
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scroll-diagnostic-apks
+          path: |
+            app/build/outputs/apk/debug/*.apk
+            app/build/outputs/apk/androidTest/debug/*.apk
+          if-no-files-found: error
