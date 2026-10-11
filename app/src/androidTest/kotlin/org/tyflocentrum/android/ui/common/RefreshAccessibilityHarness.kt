@@ -30,6 +30,8 @@ internal class RefreshAccessibilityHarness(
         return JSONObject().apply {
             put("id", node.toString())
             put("class", node.className?.toString())
+            put("viewId", node.viewIdResourceName)
+            put("stateDescription", node.stateDescription?.toString())
             put("text", node.text?.toString())
             put("contentDescription", node.contentDescription?.toString())
             put("clickable", node.isClickable)
@@ -138,6 +140,9 @@ internal class RefreshAccessibilityHarness(
     }
 
     fun focus(name: String, substring: Boolean = false) {
+        // Czytnik może jeszcze wykonywać początkowe ogniskowanie nowego okna.
+        // Poczekaj przed ustawieniem punktu startowego; nigdy nie odtwarzaj fokusu po badanej akcji.
+        automation.waitForIdle(500, 5_000)
         val target = named(name, substring).single()
         dump("before-focus")
         val alreadyFocused = target.isAccessibilityFocused
@@ -150,6 +155,33 @@ internal class RefreshAccessibilityHarness(
         } finally {
             dump("after-focus")
         }
+    }
+
+    fun focusByReader(name: String, substring: Boolean = false) {
+        automation.waitForIdle(500, 5_000)
+        val target = named(name, substring).single()
+        val bounds = Rect().also { target.getBoundsInScreen(it) }
+        val x = bounds.exactCenterX()
+        val y = bounds.exactCenterY()
+        dump("before-reader-focus")
+        val down = android.os.SystemClock.uptimeMillis()
+        fun send(action: Int) {
+            val event = android.view.MotionEvent.obtain(down, android.os.SystemClock.uptimeMillis(), action, x, y, 0)
+            event.source = android.view.InputDevice.SOURCE_TOUCHSCREEN
+            try { assertTrue("Wstrzyknięcie dotyku", automation.injectInputEvent(event, true)) }
+            finally { event.recycle() }
+        }
+        // Wstrzyknięty DOWN omija filtr eksploracji Androida. Hover trafia do widoku,
+        // który emituje prawdziwe TYPE_VIEW_HOVER_ENTER obsługiwane przez TalkBack.
+        send(android.view.MotionEvent.ACTION_HOVER_ENTER)
+        try {
+            repeat(6) { Thread.sleep(100); send(android.view.MotionEvent.ACTION_HOVER_MOVE) }
+        } finally { send(android.view.MotionEvent.ACTION_HOVER_EXIT) }
+        try {
+            compose.waitUntil(8_000) { named(name, substring).singleOrNull()?.isAccessibilityFocused == true }
+            write("reader-focus", JSONObject().put("name", name).put("x", x).put("y", y)
+                .put("directAccessibilityFocusAction", false).toString())
+        } finally { dump("after-reader-focus") }
     }
 
     fun click(name: String) {

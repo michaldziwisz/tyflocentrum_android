@@ -45,8 +45,8 @@ import retrofit2.create
 class ContentTimeRefreshScreenTest {
     companion object {
         private var sharedContainer: AppContainer? = null
-        @JvmStatic @org.junit.AfterClass fun releasePlayer() {
-            InstrumentationRegistry.getInstrumentation().runOnMainSync { sharedContainer?.playerController?.release() }
+        @JvmStatic @org.junit.AfterClass fun pausePlayer() {
+            InstrumentationRegistry.getInstrumentation().runOnMainSync { sharedContainer?.playerController?.pause() }
         }
     }
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
@@ -90,6 +90,26 @@ class ContentTimeRefreshScreenTest {
         return found
     }
     private lateinit var apparatus: RefreshAccessibilityHarness
+    // Czas należy teraz do nazwy. Wiersz treści nie ma własnego stateDescription;
+    // stany innych kontrolek (nawigacja, przełączniki) zostają nietknięte.
+    private fun assertNoRowState(title: String) =
+        assertNull("Wiersz treści nie może mieć stateDescription: $title",
+            requireNotNull(ax(title)) { "Brak węzła AX dla $title" }.stateDescription?.toString())
+
+    /** Kontrakt kolejności: typ treści, tytuł, czas, data. Zwraca nazwę bez segmentu czasu. */
+    private fun nameSkeleton(name: String, label: String): List<String> {
+        val parts = name.split(", ")
+        assertTrue("Nazwa bez miejsca na czas przed datą: $name", parts.size >= 3)
+        assertEquals("Czas bezpośrednio przed datą: $name", label, parts[parts.size - 2])
+        assertEquals("Czas dokładnie raz w nazwie: $name", 1, parts.count { it == label })
+        return parts.filterIndexed { index, _ -> index != parts.size - 2 }
+    }
+
+    private fun requiredName(title: String): String =
+        requireNotNull(requireNotNull(ax(title)) { "Brak węzła AX dla $title" }.contentDescription) {
+            "Brak contentDescription na węźle $title"
+        }.toString()
+
     private fun clickRefresh() {
         compose.waitUntil(5_000) { ax("Odśwież")?.isEnabled == true }
         compose.onNode(hasContentDescription("Odśwież") and isEnabled()).assertHasClickAction()
@@ -98,10 +118,11 @@ class ContentTimeRefreshScreenTest {
     private fun row(title: String) = compose.onNode(hasContentDescription(title, substring = true) and hasClickAction())
     private fun waitLabel(title: String, label: String) {
         compose.waitUntil(10_000) {
-            compose.onAllNodes(hasContentDescription(title,substring=true) and hasContentDescription(label,substring=true))
+            compose.onAllNodes(hasContentDescription(title,substring=true) and
+                hasContentDescription(label,substring=true) and hasClickAction())
                 .fetchSemanticsNodes().size == 1
         }
-        compose.waitUntil(5_000) { ax(title)?.contentDescription?.contains(label) == true }
+        compose.waitUntil(5_000) { ax(title)?.contentDescription?.toString()?.contains(label) == true }
     }
 
     private fun scenario(surface: String, resume: Boolean = false) {
@@ -115,7 +136,8 @@ class ContentTimeRefreshScreenTest {
             retrofit("https://tyfloswiat.pl/wp-json/").create(),retrofit("https://kontakt.tyflopodcast.net/").create(),client,store)
         lateinit var container: AppContainer
         compose.runOnUiThread {
-            container = sharedContainer ?: AppContainer(compose.activity.application as Application).also { sharedContainer=it }
+            container = (compose.activity.application as net.tyflopodcast.tyflocentrum.TyflocentrumApplication).appContainer
+            sharedContainer = container
             // Tylko podmiana zależności w testach. Produkcyjny AppContainer bez zmian.
             for ((field,value) in listOf("repository" to repository, "contentTimes" to store)) {
                 AppContainer::class.java.getDeclaredField(field).apply { isAccessible=true }.set(container,value)
@@ -170,6 +192,7 @@ class ContentTimeRefreshScreenTest {
             val identities=titles.associateWith { row(it).fetchSemanticsNode().id }
             apparatus.dump("initial")
             val androidNodes=titles.associateWith { requireNotNull(ax(it)) }
+            val skeletons=titles.associateWith { nameSkeleton(requireNotNull(ax(it)).contentDescription.toString(),"Czas niedostępny") }
             val androidActions=titles.associateWith { requireNotNull(ax(it)).actionList.map { a -> a.id }.filter { a -> a != AccessibilityNodeInfo.ACTION_ACCESSIBILITY_FOCUS && a != AccessibilityNodeInfo.ACTION_CLEAR_ACCESSIBILITY_FOCUS } }
             val actions=titles.associateWith { row(it).fetchSemanticsNode().config.getOrNull(SemanticsActions.CustomActions).orEmpty().map { a -> a.label } }
             val original=repository.peekNewsScreenCache()?.items
@@ -218,7 +241,9 @@ class ContentTimeRefreshScreenTest {
                     // Compose ID ma pozostać ten sam także po powrocie z tła.
                     if(!resume) assertEquals("Tożsamość Android AX",androidNodes[title],android)
                     if(title==titles.first()) assertEquals(bounds[title]!!.topLeft,node.boundsInRoot.topLeft)
-                    assertEquals(1,android.contentDescription.toString().split(label).size-1)
+                    assertEquals("Nazwa poza czasem bez zmian",skeletons[title],
+                        nameSkeleton(android.contentDescription.toString(),label))
+                    assertNoRowState(title)
                     assertEquals(0,android.childCount)
                     val visible=if(phase>=3) label else if(title=="Stały podcast")
                         if(phase==1) "Czas trwania: 1 min 1 s" else "Czas trwania: 2 min 2 s"
@@ -233,14 +258,20 @@ class ContentTimeRefreshScreenTest {
                 assertTrue("Zmiana czasu nie ogłasza nowych wpisów: $announcements",announcements.isEmpty())
                 if(original!=null) assertEquals(original,repository.peekNewsScreenCache()?.items)
             }
-            val stable=titles.associateWith { ax(it)?.contentDescription.toString() }
+            // Jawnie wymagamy istniejącego węzła i istniejącej nazwy: null nie może
+            // zaliczyć porównania przez zamianę na tekst "null" po obu stronach.
+            val stable=titles.associateWith { requiredName(it) }
             val beforeNoChange = ledger.size
             apparatus.dump("no-change-before-refresh")
             clickRefresh()
             compose.waitUntil(10_000) { ledger.size > beforeNoChange && compose.onAllNodes(hasContentDescription("Odśwież") and isEnabled() and hasClickAction()).fetchSemanticsNodes().size == 1 }
             compose.waitForIdle()
             apparatus.dump("no-change-after-refresh")
-            assertEquals(stable,titles.associateWith { ax(it)?.contentDescription.toString() })
+            assertEquals(stable,titles.associateWith { requiredName(it) })
+            titles.forEach { title ->
+                assertNoRowState(title)
+                assertEquals(skeletons[title],nameSkeleton(requiredName(title),"Czas niedostępny"))
+            }
             titles.forEach { title ->
                 assertEquals(identities[title],row(title).fetchSemanticsNode().id)
                 assertEquals(actions[title],row(title).fetchSemanticsNode().config.getOrNull(SemanticsActions.CustomActions).orEmpty().map { it.label })

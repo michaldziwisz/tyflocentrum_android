@@ -22,8 +22,8 @@ android {
         applicationId = "net.tyflopodcast.tyflocentrum"
         minSdk = 26
         targetSdk = 36
-        versionCode = 10
-        versionName = "1.0.9"
+        versionCode = 11
+        versionName = "1.0.10"
 
         testInstrumentationRunner = "net.tyflopodcast.tyflocentrum.ui.common.ContentTimeTestRunner"
         vectorDrawables {
@@ -136,6 +136,8 @@ dependencies {
     implementation("org.jsoup:jsoup:1.22.1")
 
     androidTestImplementation("androidx.test:runner:1.7.0")
+    // Compose wnosi starsze Espresso, które na API37 wywołuje usunięte InputManager.getInstance.
+    androidTestImplementation("androidx.test.espresso:espresso-core:3.7.0")
     androidTestImplementation("androidx.test.ext:junit:1.3.0")
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
 

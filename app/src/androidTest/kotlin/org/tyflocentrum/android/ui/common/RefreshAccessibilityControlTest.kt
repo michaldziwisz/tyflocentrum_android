@@ -10,6 +10,10 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -84,8 +88,18 @@ class RefreshAccessibilityControlTest {
             var count by mutableIntStateOf(0)
             compose.setContent {
                 MaterialTheme {
-                    Button(onClick = { count++ },
-                        modifier = Modifier.semantics { contentDescription = "Kontrolka Compose" }) {
+                    Column {
+                        val increment: () -> Unit = { count++ }
+                        Button(onClick = increment,
+                            modifier = Modifier.clearAndSetSemantics {
+                                contentDescription = "Kontrolka Compose"
+                                role = Role.Button
+                                // Ta sama akcja dla dotyku i prawdziwego ACTION_CLICK przez AX.
+                                onClick { increment(); true }
+                            }) {
+                            Text("Kontrolka Compose")
+                        }
+                        // Licznik jest niezależnym skutkiem kliknięcia, a nie dzieckiem przycisku.
                         Text("Compose licznik: $count")
                     }
                 }
@@ -93,6 +107,10 @@ class RefreshAccessibilityControlTest {
             compose.waitForIdle()
             val name = "Kontrolka Compose"
             compose.waitUntil(5_000) { harness.named(name).size == 1 }
+            compose.onNodeWithContentDescription(name).assertHasClickAction().assertIsEnabled()
+            compose.onAllNodes(hasContentDescription(name), useUnmergedTree = true).assertCountEquals(1)
+            assertEquals(0, harness.named(name).single().childCount)
+            compose.onNodeWithText("Compose licznik: 0").assertIsDisplayed()
             harness.focus(name)
             harness.focus(name)
             val before = harness.named(name).single()

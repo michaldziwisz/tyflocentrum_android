@@ -2,6 +2,7 @@
 # Jeden przebieg: kontrolki i odebrane dowody, następnie pełna suita.
 set -uo pipefail
 python3 -B tools/test_refresh_evidence.py || exit 1
+python3 -B tools/test_refresh_ci_scope.py || exit 1
 out=app/build/refresh-evidence
 mkdir -p "$out" || exit 1
 collect_emergency() {
@@ -28,7 +29,11 @@ fi
 # Przebieg pełny nie może nadpisać kontrolek ani odziedziczyć ich deklaracji zapisu.
 adb shell mv /data/local/tmp/tyflo-refresh /data/local/tmp/tyflo-refresh-control || exit 1
 adb logcat -c || exit 1
-./gradlew --no-daemon connectedDebugAndroidTest
+# Dwie klasy kontrolek historii prawdziwego czytnika wymagają aktywnego TalkBacka.
+# Zostają w androidTest do pomiaru na telefonie; CI nie udaje ich wykonania.
+# Pozostałe testy produktu, AX, przewijania i odtwarzania wykonujemy w całości.
+./gradlew --no-daemon connectedDebugAndroidTest \
+  -Pandroid.testInstrumentationRunnerArguments.notClass=net.tyflopodcast.tyflocentrum.ui.common.ReaderFocusControlTest,net.tyflopodcast.tyflocentrum.ui.common.ReaderDynamicLabelControlTest
 full_result=$?
 collect_stage full
 collection_result=$?
