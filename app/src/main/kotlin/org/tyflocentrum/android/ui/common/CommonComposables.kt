@@ -863,12 +863,12 @@ fun ContentListItem(
     val accessibilityTitle = remember(title, kind, contentKindLabelPosition) {
         kind?.accessibilityTitle(title, contentKindLabelPosition) ?: title
     }
-    val accessibilityDescription = remember(accessibilityTitle, supportingText, date, contentTime) {
+    val accessibilityDescription = remember(accessibilityTitle, supportingText, contentTime?.accessible, date) {
         listOfNotNull(
             accessibilityTitle,
             supportingText?.takeIf { it.isNotBlank() },
-            date.takeIf { it.isNotBlank() },
-            contentTime?.accessible
+            contentTime?.accessible,
+            date.takeIf { it.isNotBlank() }
         ).joinToString(", ")
     }
     val customActions = remember(onListen, onCopyLink, favoriteLabel, onToggleFavorite) {
@@ -943,7 +943,8 @@ fun ContentListItem(
                     Text(
                         text = listOfNotNull(date.takeIf { it.isNotBlank() }, contentTime?.visible).joinToString(" · "),
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        minLines = if (contentTime != null) 2 else 1
                     )
                 }
                 if (!supportingText.isNullOrBlank()) {

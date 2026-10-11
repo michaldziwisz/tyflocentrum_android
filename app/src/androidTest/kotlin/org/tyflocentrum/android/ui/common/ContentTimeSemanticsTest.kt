@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.Context
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.test.runner.AndroidJUnitRunner
@@ -17,16 +18,34 @@ import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
 
-// Te testy mierzą prawdziwą semantykę Compose, nie uruchamiają Cast ani radia.
+// Wspólny runner używa produkcyjnego Application i odtwarzacza.
+// Same testy semantyki nadal nie są pomiarem odtwarzania.
 class ContentTimeTestRunner : AndroidJUnitRunner() {
+    // Ochrona także wywołań bibliotek: test nie może odłączać czytnika użytkownika.
+    override fun getUiAutomation(): android.app.UiAutomation = getUiAutomation(0)
+    override fun getUiAutomation(flags: Int): android.app.UiAutomation =
+        requireNotNull(super.getUiAutomation(flags or android.app.UiAutomation.FLAG_DONT_SUPPRESS_ACCESSIBILITY_SERVICES))
+
     override fun newApplication(cl: ClassLoader, className: String, context: Context): Application =
-        super.newApplication(cl, Application::class.java.name, context)
+        super.newApplication(cl, net.tyflopodcast.tyflocentrum.TyflocentrumApplication::class.java.name, context)
 }
 
 class ContentTimeSemanticsTest {
     @get:Rule val compose = createComposeRule()
 
-    private fun assertAndroidClickableName(name: String) {
+    /** Kontrakt kolejności: typ treści, tytuł, [czas], data. Czas dokładnie raz, tuż przed datą. */
+    private fun assertTimeBeforeDate(name: String, time: String, date: String) {
+        val parts = name.split(", ")
+        assertTrue("Nazwa bez miejsca na czas przed datą: $name", parts.size >= 3)
+        assertEquals("Data na końcu nazwy: $name", date, parts.last())
+        assertEquals("Czas bezpośrednio przed datą: $name", time, parts[parts.size - 2])
+        assertEquals("Czas dokładnie raz w nazwie: $name", 1, parts.count { it == time })
+        assertFalse("Czas nie może poprzedzać typu i tytułu: $name", parts.first().contains(time))
+    }
+
+    /** Czas należy do nazwy. Wiersz treści nie ma własnego stateDescription;
+     *  stany innych kontrolek (nawigacja, przełączniki) pozostają nietknięte. */
+    private fun assertAndroidClickableRow(name: String): android.view.accessibility.AccessibilityNodeInfo {
         val automation=androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().uiAutomation
         fun matching(): List<android.view.accessibility.AccessibilityNodeInfo> {
             val nodes=mutableListOf<android.view.accessibility.AccessibilityNodeInfo>()
@@ -42,30 +61,59 @@ class ContentTimeSemanticsTest {
         val nodes=matching()
         assertEquals(1,nodes.size)
         assertTrue(nodes.single().isClickable)
-        println("ANDROID_ACCESSIBILITY_NODE name=$name; clickable=${nodes.single().isClickable}; count=${nodes.size}; children=${nodes.single().childCount}")
+        assertTrue(nodes.single().isEnabled)
+        assertNull("Wiersz treści nie może mieć stateDescription",nodes.single().stateDescription?.toString())
+        assertEquals(0,nodes.single().childCount)
+        assertTrue(nodes.single().actionList.any { it.id == android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK })
+        println("ANDROID_ACCESSIBILITY_NODE name=$name; clickable=${nodes.single().isClickable}; count=${nodes.size}; children=${nodes.single().childCount}; state=${nodes.single().stateDescription}")
+        return nodes.single()
     }
 
-    @Test fun timeIsOnClickableRowOnceAndActionsStillWork() {
+    private fun assertNoRowStateKey(name: String) {
+        compose.onNodeWithContentDescription(name)
+            .assert(SemanticsMatcher.keyNotDefined(SemanticsProperties.StateDescription))
+    }
+
+    @Test fun timeIsInsideClickableNameOnceAndActionsStillWork() {
         var opened = 0
         var listened = 0
+        var copied = 0
+        var favorited = 0
         val label = ContentTime.audio(Json.parseToJsonElement("""{"schema_version":1,"audio_status":"ready","duration_seconds":61}""")).timeLabel()
         compose.setContent {
             MaterialTheme {
                 ContentListItem(title="Audycja", date="8 paź 2026", kind=ContentKind.PODCAST,
                     contentTime=label, onOpen={opened++}, onListen={listened++},
-                    onCopyLink={}, favoriteLabel="Dodaj do ulubionych", onToggleFavorite={})
+                    onCopyLink={copied++}, favoriteLabel="Dodaj do ulubionych", onToggleFavorite={favorited++})
             }
         }
-        val name="Podcast. Audycja, 8 paź 2026, Czas trwania: 1 minuta 1 sekunda"
-        val row=compose.onNodeWithContentDescription(name).assertHasClickAction()
-        compose.onAllNodes(hasContentDescription("Czas trwania:",substring=true),useUnmergedTree=true).assertCountEquals(1)
-        compose.onNodeWithText("8 paź 2026 · Czas trwania: 1 min 1 s",useUnmergedTree=true).assertExists()
+        val date="8 paź 2026"
+        val time="Czas trwania: 1 minuta 1 sekunda"
+        val name="Podcast. Audycja, $time, $date"
+        assertTimeBeforeDate(name,time,date)
+        val row=compose.onNode(hasContentDescription(name) and hasClickAction()).assertHasClickAction()
+        assertNoRowStateKey(name)
+        compose.onAllNodes(hasContentDescription(name),useUnmergedTree=true).assertCountEquals(1)
+        // Czas wypowiedziany raz: żaden inny węzeł nie powtarza go w nazwie.
+        compose.onAllNodes(hasContentDescription(time,substring=true),useUnmergedTree=true).assertCountEquals(1)
+        compose.onNodeWithText("$date · Czas trwania: 1 min 1 s",useUnmergedTree=true).assertExists()
         val node=row.fetchSemanticsNode()
         val actions=node.config[SemanticsActions.CustomActions]
         assertEquals(listOf("Słuchaj","Skopiuj link","Dodaj do ulubionych"),actions.map { it.label })
-        row.performClick()
-        compose.runOnIdle { actions.first().action(); assertEquals(1,opened); assertEquals(1,listened) }
-        assertAndroidClickableName(name)
+        // Mierzymy eksportowane akcje Android AX, nie wywołanie callbacków z testu.
+        val rowAx = assertAndroidClickableRow(name)
+        val labels = listOf("Słuchaj", "Skopiuj link", "Dodaj do ulubionych")
+        val androidActions = rowAx.actionList.filter { it.label?.toString() in labels }
+        assertEquals(labels, androidActions.map { it.label.toString() })
+        assertEquals(labels.size, androidActions.map { it.id }.distinct().size)
+        assertTrue(rowAx.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK))
+        androidActions.forEach { action ->
+            assertTrue("Akcja AX ${action.label} musi zostać obsłużona", rowAx.performAction(action.id))
+        }
+        compose.runOnIdle {
+            assertEquals(1,opened); assertEquals(1,listened); assertEquals(1,copied); assertEquals(1,favorited)
+        }
+        assertAndroidClickableRow(name)
         println("SEMANTICS_AUDIO="+compose.onRoot().printToString())
     }
 
@@ -86,18 +134,27 @@ class ContentTimeSemanticsTest {
             }
         }
         compose.waitUntil(5_000) { entered.get() }
-        val before=compose.onNodeWithContentDescription("Artykuł, 8 paź 2026, Czas niedostępny").assertHasClickAction()
+        val beforeName="Artykuł, Czas niedostępny, 8 paź 2026"
+        val afterName="Artykuł, Czytanie: około 2 minut, 8 paź 2026"
+        assertTimeBeforeDate(beforeName,"Czas niedostępny","8 paź 2026")
+        assertTimeBeforeDate(afterName,"Czytanie: około 2 minut","8 paź 2026")
+        val before=compose.onNode(hasContentDescription(beforeName) and hasClickAction()).assertHasClickAction()
+        assertNoRowStateKey(beforeName)
         val nodeId=before.fetchSemanticsNode().id
         before.performClick()
         compose.runOnIdle { assertEquals(1,opened); release.complete(Unit) }
         compose.waitUntil(5_000) {
-            compose.onAllNodes(hasContentDescription("Czytanie: około 2 minut",substring=true)).fetchSemanticsNodes().isNotEmpty()
+            compose.onAllNodes(hasContentDescription(afterName)).fetchSemanticsNodes().isNotEmpty()
         }
-        val after=compose.onNodeWithContentDescription("Artykuł, 8 paź 2026, Czytanie: około 2 minut").assertHasClickAction()
+        val after=compose.onNode(hasContentDescription(afterName) and hasClickAction()).assertHasClickAction()
         assertEquals(nodeId,after.fetchSemanticsNode().id)
-        compose.onAllNodes(hasContentDescription("Czytanie:",substring=true),useUnmergedTree=true).assertCountEquals(1)
+        assertNoRowStateKey(afterName)
+        compose.onAllNodes(hasContentDescription(afterName),useUnmergedTree=true).assertCountEquals(1)
+        compose.onAllNodes(hasContentDescription("Czytanie: około 2 minut",substring=true),useUnmergedTree=true).assertCountEquals(1)
+        // Dawny czas nie może zostać nigdzie w nazwach po aktualizacji.
+        compose.onAllNodes(hasContentDescription("Czas niedostępny",substring=true),useUnmergedTree=true).assertCountEquals(0)
         compose.onNodeWithText("8 paź 2026 · Czytanie: około 2 min",useUnmergedTree=true).assertExists()
-        assertAndroidClickableName("Artykuł, 8 paź 2026, Czytanie: około 2 minut")
+        assertAndroidClickableRow(afterName)
         println("SEMANTICS_READING="+compose.onRoot().printToString())
     }
 
@@ -114,19 +171,54 @@ class ContentTimeSemanticsTest {
             val times=rememberContentTimeLabels(listOf(request),store,clock={now.get()})
             MaterialTheme { ContentListItem(title="Artykuł",date="2026",contentTime=times.label(request),onOpen={}) }
         }
-        compose.onNodeWithContentDescription("Artykuł, 2026, Czytanie: około 1 minuty").assertHasClickAction()
+        val freshName="Artykuł, Czytanie: około 1 minuty, 2026"
+        val expiredName="Artykuł, Czas niedostępny, 2026"
+        assertTimeBeforeDate(freshName,"Czytanie: około 1 minuty","2026")
+        assertTimeBeforeDate(expiredName,"Czas niedostępny","2026")
+        compose.onNode(hasContentDescription(freshName) and hasClickAction()).assertHasClickAction()
+        assertNoRowStateKey(freshName)
         compose.runOnIdle { now.addAndGet(1_001) }
         compose.mainClock.advanceTimeBy(1_100)
+        // Wygaśnięcie musi zmienić nazwę, a nie tylko tekst na ekranie.
         compose.waitUntil(5_000) {
-            compose.onAllNodes(hasContentDescription("Czas niedostępny",substring=true)).fetchSemanticsNodes().isNotEmpty()
+            compose.onAllNodes(hasContentDescription(expiredName)).fetchSemanticsNodes().isNotEmpty()
         }
-        compose.onNodeWithContentDescription("Artykuł, 2026, Czas niedostępny").assertHasClickAction()
+        compose.onNode(hasContentDescription(expiredName) and hasClickAction()).assertHasClickAction()
+        assertNoRowStateKey(expiredName)
+        compose.onAllNodes(hasContentDescription("Czytanie: około 1 minuty",substring=true),useUnmergedTree=true).assertCountEquals(0)
+        assertAndroidClickableRow(expiredName)
         assertEquals(1,calls.get())
+    }
+
+    @Test fun timeCanBeRemovedFromRowWithoutDateAndWithCommas() {
+        val time = androidx.compose.runtime.mutableStateOf<TimeLabel?>(
+            TimeLabel("Czytanie: około 2 min", "Czytanie: około 2 minut"))
+        compose.setContent {
+            MaterialTheme {
+                ContentListItem(title="Tytuł, z przecinkiem", date="", supportingText="Opis, dodatkowy",
+                    contentTime=time.value, onOpen={})
+            }
+        }
+        val before="Tytuł, z przecinkiem, Opis, dodatkowy, Czytanie: około 2 minut"
+        val after="Tytuł, z przecinkiem, Opis, dodatkowy"
+        val nodeId=compose.onNodeWithContentDescription(before).assertHasClickAction().fetchSemanticsNode().id
+        assertNoRowStateKey(before)
+        assertAndroidClickableRow(before)
+        compose.runOnIdle { time.value=null }
+        compose.waitUntil(5_000) { compose.onAllNodes(hasContentDescription(after)).fetchSemanticsNodes().size==1 }
+        assertEquals(nodeId,compose.onNodeWithContentDescription(after).assertHasClickAction().fetchSemanticsNode().id)
+        assertNoRowStateKey(after)
+        assertAndroidClickableRow(after)
+        compose.onAllNodes(hasContentDescription("Czytanie",substring=true),useUnmergedTree=true).assertCountEquals(0)
     }
 
     @Test fun issueAndPdfRowsHaveNoInventedTime() {
         compose.setContent { MaterialTheme { ContentListItem(title="Numer czasopisma",date="2026",onOpen={}) } }
         compose.onNodeWithContentDescription("Numer czasopisma, 2026").assertHasClickAction()
+        // Brak czasu musi być brakiem pola w nazwie ORAZ brakiem klucza StateDescription:
+        // produkt nie dopisuje czasu do stanu wiersza w żadnym wariancie.
+        assertNoRowStateKey("Numer czasopisma, 2026")
+        assertAndroidClickableRow("Numer czasopisma, 2026")
         compose.onAllNodes(hasContentDescription("Czas",substring=true)).assertCountEquals(0)
         compose.onAllNodes(hasContentDescription("Czytanie",substring=true)).assertCountEquals(0)
     }

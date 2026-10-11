@@ -1,0 +1,1 @@
+Dodano czas trwania audycji i szacowany czas czytania artykułów na listach treści. Poprawiono aktualizowanie tych informacji po odświeżeniu i powrocie do aplikacji. Czytnik ekranu odczytuje czas po tytule, przed datą.
