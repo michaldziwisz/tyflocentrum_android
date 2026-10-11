@@ -943,7 +943,8 @@ fun ContentListItem(
                     Text(
                         text = listOfNotNull(date.takeIf { it.isNotBlank() }, contentTime?.visible).joinToString(" · "),
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        minLines = if (contentTime != null) 2 else 1
                     )
                 }
                 if (!supportingText.isNullOrBlank()) {
